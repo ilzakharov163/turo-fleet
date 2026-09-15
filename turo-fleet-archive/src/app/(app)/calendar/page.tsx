@@ -15,26 +15,25 @@ import DatePicker from '@/components/ui/DatePicker'
 
 interface PayrollRow {
   car: Car
-  activeWeeks: number
+  inactiveDays: number
   salary: number
 }
 
-function calcSalary(activeWeeks: number): number {
-  if (activeWeeks >= 3) return 150
-  if (activeWeeks === 2) return 75
-  return 0
+function calcSalary(inactiveDays: number, totalDays: number): number {
+  if (inactiveDays >= totalDays) return 0   // весь месяц простой → $0
+  if (inactiveDays >= 14) return 75          // 14+ дней простоя → $75
+  return 150                                  // менее 14 дней → $150
 }
 
 export default function CalendarPage() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
-  const [ownerTab, setOwnerTab] = useState<'main' | 'ilya'>('main')
   const [cars, setCars] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<CarBlock[]>([])
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ car_id: '', start_date: '', end_date: '', reason: '' })
   const [editBlock, setEditBlock] = useState<CarBlock | null>(null)
 
-  // Зарплата (ручные выплаты)
+  // Выплаты зарплаты (ручные)
   const [payments, setPayments] = useState<{ id: string; amount: number; period: string; owner_group: string }[]>([])
   const [payAmount, setPayAmount] = useState('')
   const [payStart, setPayStart] = useState('')
@@ -59,8 +58,8 @@ export default function CalendarPage() {
     if (payStart && payEnd) period = `${format(parseISO(payStart), 'd MMM', { locale: ru })} – ${format(parseISO(payEnd), 'd MMM yyyy', { locale: ru })}`
     else if (payStart) period = format(parseISO(payStart), 'd MMM yyyy', { locale: ru })
     const supabase = createClient()
-    const { data } = await supabase.from('salary_payments').insert({ amount: parseFloat(payAmount), period, owner_group: ownerTab }).select().single()
-    if (data) await log('create', 'salary', data.id, { amount: parseFloat(payAmount), period: period || '', owner_group: ownerTab })
+    const { data } = await supabase.from('salary_payments').insert({ amount: parseFloat(payAmount), period, owner_group: 'main' }).select().single()
+    if (data) await log('create', 'salary', data.id, { amount: parseFloat(payAmount), period: period || '' })
     setPayAmount(''); setPayStart(''); setPayEnd('')
     load()
   }
@@ -76,29 +75,22 @@ export default function CalendarPage() {
   useEffect(() => { load() }, [load])
 
   const days = eachDayOfInterval({ start: startOfMonth(currentMonth), end: endOfMonth(currentMonth) })
+  const totalDays = days.length
 
   function isBlocked(carId: string, day: Date): CarBlock | undefined {
     return blocks.find(b => {
       if (b.car_id !== carId) return false
       const start = parseISO(b.start_date)
-      // open-ended block (no end_date) = blocked until today
       const end = b.end_date ? parseISO(b.end_date) : new Date()
       return isWithinInterval(day, { start, end })
     })
   }
 
   function calcPayroll(): PayrollRow[] {
-    const monthStart = startOfMonth(currentMonth)
-    const monthEnd = endOfMonth(currentMonth)
-    const totalDays = differenceInDays(monthEnd, monthStart) + 1
-
-    return cars.map(car => {
-      // Считаем активные дни — дни месяца не покрытые блокировкой
+    return activeCars.map(car => {
       let inactiveDays = 0
       days.forEach(day => { if (isBlocked(car.id, day)) inactiveDays++ })
-      const activeDays = totalDays - inactiveDays
-      const activeWeeks = Math.floor(activeDays / 7)
-      return { car, activeWeeks, salary: calcSalary(activeWeeks) }
+      return { car, inactiveDays, salary: calcSalary(inactiveDays, totalDays) }
     })
   }
 
@@ -125,25 +117,14 @@ export default function CalendarPage() {
     load()
   }
 
-  const tabLabels: Record<string, string> = { main: 'Основной парк', ilya: 'Парк Ильи' }
-  const tabCars = cars.filter(c => (c.owner_group || 'main') === ownerTab && !c.delisted)
-  const payroll = calcPayroll().filter(r => (r.car.owner_group || 'main') === ownerTab && !r.car.delisted)
+  const activeCars = cars.filter(c => !c.delisted)
+  const payroll = calcPayroll()
   const totalPayroll = payroll.reduce((s, r) => s + r.salary, 0)
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex gap-2">
-          {(['main', 'ilya'] as const).map(tab => (
-            <button
-              key={tab}
-              onClick={() => setOwnerTab(tab)}
-              className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${ownerTab === tab ? 'bg-[#4F46E5] text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
-            >
-              {tabLabels[tab]}
-            </button>
-          ))}
-        </div>
+        <h1 className="text-xl font-bold text-gray-800">Календарь</h1>
         <button
           onClick={() => { setShowModal(true); setEditBlock(null); setForm({ car_id: '', start_date: '', end_date: '', reason: '' }) }}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -184,7 +165,7 @@ export default function CalendarPage() {
             </tr>
           </thead>
           <tbody>
-            {tabCars.map(car => (
+            {activeCars.map(car => (
               <tr key={car.id} className="border-b last:border-0">
                 <td className="px-4 py-3 font-medium text-gray-700 sticky left-0 bg-white whitespace-nowrap">
                   {car.make} {car.model} <span className="text-gray-400">{car.plate}</span>
@@ -214,11 +195,11 @@ export default function CalendarPage() {
       </div>
 
       {/* Active blocks list */}
-      {blocks.filter(b => (b.car?.owner_group || 'main') === ownerTab).length > 0 && (
+      {blocks.length > 0 && (
         <div className="bg-white rounded-[18px] p-6 mb-8 card-shadow border border-gray-100/80">
           <h2 className="text-base font-semibold mb-4">Активные блокировки</h2>
           <div className="space-y-2">
-            {blocks.filter(b => (b.car?.owner_group || 'main') === ownerTab).map(b => (
+            {blocks.map(b => (
               <div key={b.id} className="flex items-center justify-between py-2 border-b last:border-0">
                 <div>
                   <span className="font-medium">{b.car?.make} {b.car?.model} {b.car?.plate}</span>
@@ -238,22 +219,22 @@ export default function CalendarPage() {
 
       {/* Payroll section */}
       <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
-        <h2 className="text-base font-semibold mb-1">Зарплата операторов за {format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
-        <p className="text-xs text-gray-400 mb-5">$150/авто · 3–4 акт. недели → $150 · 2 недели → $75 · меньше → $0</p>
+        <h2 className="text-base font-semibold mb-1">Зарплата сотрудника за {format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
+        <p className="text-xs text-gray-400 mb-5">Простой {"<"} 14 дней → $150 · простой ≥ 14 дней → $75 · весь месяц → $0</p>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-gray-400 border-b">
               <th className="pb-3 font-medium">Авто</th>
-              <th className="pb-3 font-medium text-center">Акт. недель</th>
+              <th className="pb-3 font-medium text-center">Дней простоя</th>
               <th className="pb-3 font-medium text-right">Зарплата</th>
             </tr>
           </thead>
           <tbody>
-            {payroll.map(({ car, activeWeeks, salary }) => (
+            {payroll.map(({ car, inactiveDays, salary }) => (
               <tr key={car.id} className="border-b last:border-0">
                 <td className="py-3">{car.make} {car.model} <span className="text-gray-400">{car.plate}</span></td>
-                <td className="py-3 text-center">{activeWeeks}</td>
-                <td className={`py-3 text-right font-semibold ${salary > 0 ? 'text-green-600' : 'text-red-400'}`}>
+                <td className="py-3 text-center text-gray-500">{inactiveDays}</td>
+                <td className={`py-3 text-right font-semibold ${salary === 150 ? 'text-green-600' : salary === 75 ? 'text-yellow-600' : 'text-red-400'}`}>
                   ${salary}
                 </td>
               </tr>
@@ -270,15 +251,13 @@ export default function CalendarPage() {
 
       {/* Salary payments (manual) */}
       {(() => {
-        const paidSum = payments.filter(p => (p.owner_group || 'main') === ownerTab).reduce((s, p) => s + Number(p.amount), 0)
-        const total = totalPayroll
-        const remaining = total - paidSum
+        const paidSum = payments.reduce((s, p) => s + Number(p.amount), 0)
+        const remaining = totalPayroll - paidSum
         return (
           <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80 mt-5">
             <h2 className="text-base font-semibold mb-1">Выплаты зарплаты</h2>
             <p className="text-xs text-gray-400 mb-5">Сумма за месяц считается автоматически из календаря</p>
 
-            {/* Добавить выплату */}
             <form onSubmit={addPayment} className="flex items-end gap-3 mb-5 flex-wrap">
               <div>
                 <label className="block text-xs text-gray-400 font-medium mb-1">Выплачено ($)</label>
@@ -298,10 +277,9 @@ export default function CalendarPage() {
               </button>
             </form>
 
-            {/* Список выплат */}
-            {payments.filter(p => (p.owner_group || 'main') === ownerTab).length > 0 && (
+            {payments.length > 0 && (
               <div className="border border-gray-100 rounded-xl divide-y divide-gray-50 mb-5">
-                {payments.filter(p => (p.owner_group || 'main') === ownerTab).map(p => (
+                {payments.map(p => (
                   <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                     <span className="text-gray-600">{p.period || '—'}</span>
                     <div className="flex items-center gap-3">
@@ -313,9 +291,8 @@ export default function CalendarPage() {
               </div>
             )}
 
-            {/* Итоги */}
             <div className="flex items-center gap-8 pt-2 border-t border-gray-100">
-              <div><span className="text-sm text-gray-500">Сумма за месяц: </span><span className="font-bold text-gray-900">${total.toFixed(2)}</span></div>
+              <div><span className="text-sm text-gray-500">Сумма за месяц: </span><span className="font-bold text-gray-900">${totalPayroll.toFixed(2)}</span></div>
               <div><span className="text-sm text-gray-500">Выплачено: </span><span className="font-bold text-emerald-600">${paidSum.toFixed(2)}</span></div>
               <div><span className="text-sm text-gray-500">Остаток: </span><span className={`font-bold ${remaining > 0 ? 'text-rose-400' : 'text-emerald-600'}`}>${remaining.toFixed(2)}</span></div>
             </div>
@@ -333,7 +310,7 @@ export default function CalendarPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
                 <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">Выберите авто</option>
-                  {tabCars.map(c => <option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>)}
+                  {activeCars.map(c => <option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -342,8 +319,8 @@ export default function CalendarPage() {
                   <DatePicker value={form.start_date} onChange={val => setForm(f => ({ ...f, start_date: val }))} required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата по</label>
-                  <DatePicker value={form.end_date} onChange={val => setForm(f => ({ ...f, end_date: val }))} required />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата по (необязательно)</label>
+                  <DatePicker value={form.end_date} onChange={val => setForm(f => ({ ...f, end_date: val }))} />
                 </div>
               </div>
               <div>
