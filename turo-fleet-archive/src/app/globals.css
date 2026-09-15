@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+:root {
+  --background: #F4F5F9;
+  --foreground: #1A1D23;
+  --sidebar-width: 72px;
+}
+
+/* ── Dark mode (образец: глубокий тёмно-синий) ─────── */
+html.dark {
+  color-scheme: dark;
+  --background: #0D1121;
+}
+html.dark body {
+  background: #0D1121;
+  color: #E8EAF0;
+}
+/* Cards & surfaces */
+html.dark .bg-white          { background-color: #131929; }
+html.dark .bg-gray-50        { background-color: #101422; }
+/* Table thead bg, subtle row stripe */
+html.dark .bg-gray-50\/60    { background-color: rgba(255,255,255,0.02); }
+html.dark tr:hover .hover\:bg-gray-50\/60,
+html.dark .hover\:bg-gray-50\/60:hover { background-color: rgba(255,255,255,0.04); }
+html.dark .bg-gray-100       { background-color: #1A2238; }
+/* Text */
+html.dark .text-gray-900     { color: #E8EAF0; }
+html.dark .text-gray-800     { color: #D0D4E0; }
+html.dark .text-gray-700     { color: #B8BDCC; }
+html.dark .text-gray-600     { color: #8B92A8; }
+html.dark .text-gray-500     { color: #8B92A8; }
+html.dark .text-gray-400     { color: #5A6278; }
+/* Borders — полностью убраны для карточек */
+html.dark .border-gray-100,
+html.dark .border-gray-100\/80    { border-color: transparent; }
+html.dark [class*="border-gray-100"] { border-color: transparent; }
+html.dark .border-b               { border-color: rgba(255,255,255,0.04); }
+html.dark .border-gray-200        { border-color: rgba(255,255,255,0.06); }
+html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.04); }
+html.dark .card-shadow            { box-shadow: none; }
+/* Inputs */
+html.dark input                   { background-color: #1A2238; color: #E8EAF0; border-color: rgba(255,255,255,0.08); }
+html.dark input::placeholder      { color: #3D4460; }
+/* Sidebar nav hover */
+html.dark .hover\:bg-gray-50:hover { background-color: rgba(255,255,255,0.05); }
+/* Car badges & colored chips */
+html.dark .bg-blue-50   { background-color: #1A2545; }
+html.dark .text-blue-700 { color: #7B9EFF; }
+/* Table lines — все линии одинаковой интенсивности */
+html.dark table thead tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
+html.dark table tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
+html.dark table tbody tr:last-child { border-bottom: none; }
+html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.04) !important; }
+/* Scrollbar */
+html.dark ::-webkit-scrollbar-thumb { background: #1E2845; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* { box-sizing: border-box; }
+
+button, [role="button"], select, a, label[for] {
+  cursor: pointer;
+}
+
+button:focus-visible, a:focus-visible {
+  outline: 2px solid #4F46E5;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+button:focus:not(:focus-visible), a:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Modern soft card shadow */
+.card-shadow {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 16px rgba(0,0,0,0.04);
+}
+.card-shadow:hover {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);
+  transition: box-shadow 0.2s ease;
+}
+
+/* Turo purple button */
+.btn-primary {
+  background: #4F46E5;
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.30);
+}
+.btn-primary:hover {
+  background: #4338CA;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.40);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.animate-in {
+  animation: floatIn 0.18s ease-out;
+}
+@keyframes floatIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
