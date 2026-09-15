@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, Sun, Moon, ShieldAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
@@ -16,6 +16,7 @@ const nav = [
   { href: '/analytics', icon: BarChart2, label: 'Аналитика' },
   { href: '/maintenance', icon: Wrench, label: 'Техобслуживание' },
   { href: '/team', icon: Users, label: 'Команда' },
+  { href: '/claims', icon: ShieldAlert, label: 'Клеймы' },
   { href: '/log', icon: ClipboardList, label: 'История' },
 ]
 
