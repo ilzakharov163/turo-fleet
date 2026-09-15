@@ -78,261 +78,214 @@ export default function CalendarPage() {
   const totalDays = days.length
 
   function isBlocked(carId: string, day: Date): CarBlock | undefined {
-    return blocks.find(b => {
-      if (b.car_id !== carId) return false
-      const start = parseISO(b.start_date)
-      const end = b.end_date ? parseISO(b.end_date) : new Date()
-      return isWithinInterval(day, { start, end })
-    })
+    return blocks.find(b =>
+      b.car_id === carId &&
+      isWithinInterval(day, { start: parseISO(b.start_date), end: b.end_date ? parseISO(b.end_date) : new Date(9999, 0) })
+    )
   }
 
-  function calcPayroll(): PayrollRow[] {
-    return activeCars.map(car => {
-      let inactiveDays = 0
-      days.forEach(day => { if (isBlocked(car.id, day)) inactiveDays++ })
-      return { car, inactiveDays, salary: calcSalary(inactiveDays, totalDays) }
+  // Расчёт простоя для каждого авто
+  const activeCars = cars.filter(c => !c.delisted)
+  const payrollRows: PayrollRow[] = activeCars.map(car => {
+    const monthBlocks = blocks.filter(b => b.car_id === car.id).filter(b => {
+      const s = parseISO(b.start_date)
+      const e = b.end_date ? parseISO(b.end_date) : new Date(9999, 0)
+      return days.some(d => isWithinInterval(d, { start: s, end: e }))
     })
-  }
+    const inactiveDays = days.filter(d =>
+      monthBlocks.some(b => isWithinInterval(d, { start: parseISO(b.start_date), end: b.end_date ? parseISO(b.end_date) : new Date(9999, 0) }))
+    ).length
+    return { car, inactiveDays, salary: calcSalary(inactiveDays, totalDays) }
+  })
 
   async function handleSaveBlock(e: React.FormEvent) {
     e.preventDefault()
+    if (!form.car_id || !form.start_date) return
     const supabase = createClient()
+    const payload = { car_id: form.car_id, start_date: form.start_date, end_date: form.end_date || null, reason: form.reason || null }
     if (editBlock) {
-      await supabase.from('car_blocks').update({ ...form, car_id: form.car_id }).eq('id', editBlock.id)
-      await log('update', 'car_block', editBlock.id, form)
+      await supabase.from('car_blocks').update(payload).eq('id', editBlock.id)
+      await log('update', 'car_block', editBlock.id, payload)
     } else {
-      const { data } = await supabase.from('car_blocks').insert(form).select().single()
-      if (data) await log('create', 'car_block', data.id, form)
+      const { data } = await supabase.from('car_blocks').insert(payload).select().single()
+      if (data) await log('create', 'car_block', data.id, payload)
     }
     setShowModal(false)
-    setEditBlock(null)
     setForm({ car_id: '', start_date: '', end_date: '', reason: '' })
+    setEditBlock(null)
     load()
   }
 
-  async function handleDeleteBlock(block: CarBlock) {
+  async function handleDeleteBlock(b: CarBlock) {
+    if (!confirm('Удалить блокировку?')) return
     const supabase = createClient()
-    await supabase.from('car_blocks').delete().eq('id', block.id)
-    await log('delete', 'car_block', block.id, { car_id: block.car_id, start: block.start_date, end: block.end_date })
+    await supabase.from('car_blocks').delete().eq('id', b.id)
+    await log('delete', 'car_block', b.id, { car_id: b.car_id })
     load()
   }
 
-  const activeCars = cars.filter(c => !c.delisted)
-  const payroll = calcPayroll()
-  const totalPayroll = payroll.reduce((s, r) => s + r.salary, 0)
+  const totalSalary = payrollRows.reduce((s, r) => s + r.salary, 0)
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-800">Календарь</h1>
-        <button
-          onClick={() => { setShowModal(true); setEditBlock(null); setForm({ car_id: '', start_date: '', end_date: '', reason: '' }) }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          <Plus size={16} /> Добавить блокировку
-        </button>
-      </div>
+    <div className="p-8 space-y-8">
 
-      {/* Month navigation */}
-      <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => setCurrentMonth(m => subMonths(m, 1))} className="p-2 rounded-lg hover:bg-gray-100">
-          <ChevronLeft size={18} />
-        </button>
-        <span className="text-lg font-semibold capitalize">
-          {format(currentMonth, 'LLLL yyyy', { locale: ru })}
-        </span>
-        <button onClick={() => setCurrentMonth(m => addMonths(m, 1))} className="p-2 rounded-lg hover:bg-gray-100">
-          <ChevronRight size={18} />
-        </button>
-      </div>
-
-      {/* Calendar grid */}
-      <div className="bg-white rounded-[18px] overflow-x-auto mb-8 card-shadow border border-gray-100/80">
-        <table className="text-xs min-w-full">
-          <thead>
-            <tr className="border-b">
-              <th className="px-4 py-3 text-left text-gray-500 font-medium w-36 sticky left-0 bg-white">Авто</th>
-              {days.map(day => (
-                <th key={day.toISOString()} className={`px-1.5 py-3 text-center font-medium min-w-[32px] ${format(day, 'EEEE') === 'Sunday' || format(day, 'EEEE') === 'Saturday' ? 'text-blue-400' : 'text-gray-500'}`}>
-                  <div className="flex flex-col items-center gap-0.5">
-                    <div className={`w-7 h-7 flex items-center justify-center rounded-full text-sm ${isToday(day) ? 'bg-[#4F46E5] text-white font-bold' : ''}`}>
-                      {format(day, 'd')}
-                    </div>
-                    <div className="text-gray-300 text-[10px]">{format(day, 'EE', { locale: ru })}</div>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {activeCars.map(car => (
-              <tr key={car.id} className="border-b last:border-0">
-                <td className="px-4 py-3 font-medium text-gray-700 sticky left-0 bg-white whitespace-nowrap">
-                  {car.make} {car.model} <span className="text-gray-400">{car.plate}</span>
-                </td>
-                {days.map(day => {
-                  const block = isBlocked(car.id, day)
-                  return (
-                    <td key={day.toISOString()} className="px-0.5 py-1 text-center">
-                      {block ? (
-                        <div
-                          className="bg-red-100 text-red-600 rounded text-xs py-1 cursor-pointer hover:bg-red-200 transition-colors"
-                          title={block.reason || 'Неактивен'}
-                          onClick={() => { setEditBlock(block); setForm({ car_id: block.car_id, start_date: block.start_date, end_date: block.end_date, reason: block.reason || '' }); setShowModal(true) }}
-                        >
-                          ✕
-                        </div>
-                      ) : (
-                        <div className="bg-green-50 rounded py-1"> </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Active blocks list */}
-      {blocks.length > 0 && (
-        <div className="bg-white rounded-[18px] p-6 mb-8 card-shadow border border-gray-100/80">
-          <h2 className="text-base font-semibold mb-4">Активные блокировки</h2>
-          <div className="space-y-2">
-            {blocks.map(b => (
-              <div key={b.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                <div>
-                  <span className="font-medium">{b.car?.make} {b.car?.model} {b.car?.plate}</span>
-                  <span className="text-gray-500 text-sm mx-3">
-                    {format(parseISO(b.start_date), 'dd.MM.yyyy')} — {b.end_date ? format(parseISO(b.end_date), 'dd.MM.yyyy') : 'по сей день'}
-                  </span>
-                  {b.reason && <span className="text-gray-400 text-sm">{b.reason}</span>}
-                </div>
-                <button onClick={() => handleDeleteBlock(b)} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
-                  <X size={15} />
-                </button>
-              </div>
-            ))}
-          </div>
+      {/* Calendar */}
+      <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
+        <div className="flex items-center justify-between mb-6">
+          <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronLeft size={18} /></button>
+          <h2 className="text-base font-semibold capitalize">{format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
+          <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronRight size={18} /></button>
         </div>
-      )}
+
+        {/* Grid header */}
+        <div className="grid grid-cols-[180px_repeat(31,minmax(28px,1fr))] gap-px mb-1">
+          <div />
+          {days.map(d => (
+            <div key={d.toISOString()} className={`text-center text-[10px] font-medium pb-1 ${
+              isToday(d) ? 'text-[#4F46E5]' : 'text-gray-400'
+            }`}>{format(d, 'd')}</div>
+          ))}
+        </div>
+
+        {/* Cars rows */}
+        {activeCars.map(car => (
+          <div key={car.id} className="grid grid-cols-[180px_repeat(31,minmax(28px,1fr))] gap-px mb-0.5">
+            <div className="text-xs text-gray-600 flex items-center pr-2 truncate">{car.make} {car.model}</div>
+            {days.map(d => {
+              const bl = isBlocked(car.id, d)
+              return (
+                <button
+                  key={d.toISOString()}
+                  onClick={() => {
+                    if (bl) {
+                      setEditBlock(bl)
+                      setForm({ car_id: bl.car_id, start_date: bl.start_date, end_date: bl.end_date || '', reason: bl.reason || '' })
+                      setShowModal(true)
+                    } else {
+                      setEditBlock(null)
+                      setForm({ car_id: car.id, start_date: format(d, 'yyyy-MM-dd'), end_date: '', reason: '' })
+                      setShowModal(true)
+                    }
+                  }}
+                  className={`h-6 rounded-[3px] transition-colors ${
+                    bl ? 'bg-red-400 hover:bg-red-500' : isToday(d) ? 'bg-indigo-50 hover:bg-indigo-100' : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                />
+              )
+            })}
+          </div>
+        ))}
+      </div>
 
       {/* Payroll section */}
       <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
         <h2 className="text-base font-semibold mb-1">Зарплата сотрудника за {format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
-        <p className="text-xs text-gray-400 mb-5">Простой {"<"} 14 дней → $150 · простой ≥ 14 дней → $75 · весь месяц → $0</p>
-        <table className="w-full text-sm">
+        <p className="text-xs text-gray-400 mb-5">Простой &lt; 14 дней → $150 · простой ≥ 14 дней → $75 · весь месяц → $0</p>
+        <table className="w-full text-sm mb-6">
           <thead>
             <tr className="text-left text-gray-400 border-b">
-              <th className="pb-3 font-medium">Авто</th>
-              <th className="pb-3 font-medium text-center">Дней простоя</th>
-              <th className="pb-3 font-medium text-right">Зарплата</th>
+              <th className="pb-2 font-medium">Авто</th>
+              <th className="pb-2 font-medium text-center">Дней простоя</th>
+              <th className="pb-2 font-medium text-right">Зарплата</th>
             </tr>
           </thead>
           <tbody>
-            {payroll.map(({ car, inactiveDays, salary }) => (
+            {payrollRows.map(({ car, inactiveDays, salary }) => (
               <tr key={car.id} className="border-b last:border-0">
-                <td className="py-3">{car.make} {car.model} <span className="text-gray-400">{car.plate}</span></td>
-                <td className="py-3 text-center text-gray-500">{inactiveDays}</td>
-                <td className={`py-3 text-right font-semibold ${salary === 150 ? 'text-green-600' : salary === 75 ? 'text-yellow-600' : 'text-red-400'}`}>
-                  ${salary}
-                </td>
+                <td className="py-2">{car.make} {car.model}</td>
+                <td className="py-2 text-center text-gray-500">{inactiveDays}</td>
+                <td className={`py-2 text-right font-semibold ${
+                  salary === 150 ? 'text-green-600' : salary === 75 ? 'text-yellow-600' : 'text-red-500'
+                }`}>${salary}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2">
-              <td colSpan={2} className="pt-3 font-semibold">Итого</td>
-              <td className="pt-3 text-right font-bold text-lg text-blue-600">${totalPayroll}</td>
+            <tr>
+              <td colSpan={2} className="pt-3 font-semibold text-gray-700">Итого</td>
+              <td className="pt-3 text-right font-bold text-gray-900">${totalSalary}</td>
             </tr>
           </tfoot>
         </table>
-      </div>
 
-      {/* Salary payments (manual) */}
-      {(() => {
-        const paidSum = payments.reduce((s, p) => s + Number(p.amount), 0)
-        const remaining = totalPayroll - paidSum
-        return (
-          <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80 mt-5">
-            <h2 className="text-base font-semibold mb-1">Выплаты зарплаты</h2>
-            <p className="text-xs text-gray-400 mb-5">Сумма за месяц считается автоматически из календаря</p>
-
-            <form onSubmit={addPayment} className="flex items-end gap-3 mb-5 flex-wrap">
-              <div>
-                <label className="block text-xs text-gray-400 font-medium mb-1">Выплачено ($)</label>
-                <input type="number" step="0.01" min="0" value={payAmount} onChange={e => setPayAmount(e.target.value)} required placeholder="0.00"
-                  className="w-36 border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 font-medium mb-1">Период с</label>
-                <div className="w-44"><DatePicker value={payStart} onChange={setPayStart} /></div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 font-medium mb-1">по</label>
-                <div className="w-44"><DatePicker value={payEnd} onChange={setPayEnd} /></div>
-              </div>
-              <button className="bg-[#4F46E5] hover:bg-[#4338CA] text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition-colors">
-                Добавить
-              </button>
-            </form>
-
-            {payments.length > 0 && (
-              <div className="border border-gray-100 rounded-xl divide-y divide-gray-50 mb-5">
-                {payments.map(p => (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <span className="text-gray-600">{p.period || '—'}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-semibold text-gray-900">${Number(p.amount).toFixed(2)}</span>
-                      <button onClick={() => deletePayment(p.id)} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-8 pt-2 border-t border-gray-100">
-              <div><span className="text-sm text-gray-500">Сумма за месяц: </span><span className="font-bold text-gray-900">${totalPayroll.toFixed(2)}</span></div>
-              <div><span className="text-sm text-gray-500">Выплачено: </span><span className="font-bold text-emerald-600">${paidSum.toFixed(2)}</span></div>
-              <div><span className="text-sm text-gray-500">Остаток: </span><span className={`font-bold ${remaining > 0 ? 'text-rose-400' : 'text-emerald-600'}`}>${remaining.toFixed(2)}</span></div>
-            </div>
+        {/* Manual payment log */}
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">История выплат</h3>
+        <form onSubmit={addPayment} className="flex gap-2 items-end mb-4 flex-wrap">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Сумма ($)</label>
+            <input type="number" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="0" min="0" step="0.01"
+              className="border border-gray-200 rounded-[10px] px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20" />
           </div>
-        )
-      })()}
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Период с</label>
+            <DatePicker value={payStart} onChange={setPayStart} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">по</label>
+            <DatePicker value={payEnd} onChange={setPayEnd} />
+          </div>
+          <button type="submit" className="flex items-center gap-1.5 px-4 py-2 bg-[#4F46E5] text-white text-sm font-medium rounded-[10px] hover:bg-[#4338CA] transition-colors">
+            <Plus size={15} /> Добавить
+          </button>
+        </form>
+        {payments.filter(p => p.owner_group === 'main').length === 0
+          ? <p className="text-sm text-gray-400">Выплат пока нет</p>
+          : <div className="space-y-2">
+              {payments.filter(p => p.owner_group === 'main').map(p => (
+                <div key={p.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div>
+                    <span className="font-semibold text-sm">${p.amount}</span>
+                    {p.period && <span className="text-xs text-gray-400 ml-2">{p.period}</span>}
+                  </div>
+                  <button onClick={() => deletePayment(p.id)} className="text-gray-400 hover:text-red-500 transition-colors"><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+        }
+      </div>
 
       {/* Block modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-lg font-semibold mb-5">{editBlock ? 'Редактировать блокировку' : 'Добавить блокировку'}</h2>
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+          <div className="bg-white rounded-[18px] p-6 w-full max-w-sm card-shadow">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold">{editBlock ? 'Редактировать блокировку' : 'Добавить блокировку'}</h3>
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
             <form onSubmit={handleSaveBlock} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
-                <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} required className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <label className="block text-xs text-gray-500 mb-1">Авто</label>
+                <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-[10px] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20" required>
                   <option value="">Выберите авто</option>
-                  {activeCars.map(c => <option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>)}
+                  {cars.map(c => <option key={c.id} value={c.id}>{c.make} {c.model} · {c.plate}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата с</label>
-                  <DatePicker value={form.start_date} onChange={val => setForm(f => ({ ...f, start_date: val }))} required />
+                  <label className="block text-xs text-gray-500 mb-1">Дата с</label>
+                  <DatePicker value={form.start_date} onChange={v => setForm(f => ({ ...f, start_date: v }))} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата по (необязательно)</label>
-                  <DatePicker value={form.end_date} onChange={val => setForm(f => ({ ...f, end_date: val }))} />
+                  <label className="block text-xs text-gray-500 mb-1">Дата по</label>
+                  <DatePicker value={form.end_date} onChange={v => setForm(f => ({ ...f, end_date: v }))} />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Причина (необязательно)</label>
-                <input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="ДТП, ремонт, ТО..." className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <label className="block text-xs text-gray-500 mb-1">Причина</label>
+                <input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="необязательно"
+                  className="w-full border border-gray-200 rounded-[10px] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20" />
               </div>
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
-                  Сохранить
-                </button>
-                <button type="button" onClick={() => { setShowModal(false); setEditBlock(null) }} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">
-                  Отмена
+              <div className="flex gap-3 pt-1">
+                {editBlock && (
+                  <button type="button" onClick={() => handleDeleteBlock(editBlock)}
+                    className="flex-1 py-2 rounded-[10px] border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">
+                    Удалить
+                  </button>
+                )}
+                <button type="submit"
+                  className="flex-1 py-2 rounded-[10px] bg-[#4F46E5] text-white text-sm font-medium hover:bg-[#4338CA] transition-colors">
+                  {editBlock ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>
             </form>
