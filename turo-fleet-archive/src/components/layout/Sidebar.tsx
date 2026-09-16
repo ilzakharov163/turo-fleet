@@ -14,10 +14,10 @@ const nav = [
   { href: '/cars', icon: Car, label: 'Авто', adminOnly: true },
   { href: '/calendar', icon: Calendar, label: 'Календарь', adminOnly: true },
   { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
-  { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
-  { href: '/maintenance', icon: Wrench, label: 'Тех.обсл', adminOnly: true },
-  { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
   { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
+  { href: '/maintenance', icon: Wrench, label: 'Тех.обсл', adminOnly: true },
+  { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
+  { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
   { href: '/log', icon: ClipboardList, label: 'История', adminOnly: true },
 ]
 
