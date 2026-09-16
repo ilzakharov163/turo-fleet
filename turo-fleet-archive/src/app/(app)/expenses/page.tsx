@@ -211,7 +211,7 @@ export default function ExpensesPage() {
     setSelected(new Set())
     const supabase = createClient()
     const { error } = await supabase.from('expenses').update({ paid }).in('id', ids)
-    if (error) { alert('H81:0: ' + error.message); load() }
+    if (error) { alert('Ошибка: ' + error.message); load() }
   }
 
   async function removeExistingFile(path: string) {
@@ -245,7 +245,7 @@ export default function ExpensesPage() {
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-900"> 0AE>4K</h1>
+        <h1 className="text-xl font-bold text-gray-900">Расходы</h1>
         <button
           onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
