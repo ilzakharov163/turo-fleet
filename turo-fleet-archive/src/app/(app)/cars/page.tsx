@@ -27,8 +27,7 @@ export default function CarsPage() {
   const [editBlockForm, setEditBlockForm] = useState({ start_date: '', end_date: '', reason: '' })
   const [searchQuery, setSearchQuery] = useState('')
   const [highlightId, setHighlightId] = useState<string | null>(null)
-  const [ownerTab, setOwnerTab] = useState<'main' | 'ilya'>('main')
-  const [form, setForm] = useState({ make: '', model: '', plate: '', owner_group: 'main' as 'main' | 'ilya' })
+  const [form, setForm] = useState({ make: '', model: '', plate: '', owner_group: 'main' as string })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const [carBlocks, setCarBlocks] = useState<CarBlock[]>([])
@@ -138,7 +137,7 @@ export default function CarsPage() {
     load()
   }
 
-  function openEdit(car: Car) { setEditCar(car); setForm({ make: car.make, model: car.model, plate: car.plate, owner_group: car.owner_group || 'main' }); setFormErrors({}) }
+  function openEdit(car: Car) { setEditCar(car); setForm({ make: car.make, model: car.model, plate: car.plate, owner_group: 'main' }); setFormErrors({}) }
 
   function handleSearchSelect(car: Car) {
     setSearchQuery('')
@@ -156,31 +155,16 @@ export default function CarsPage() {
       ).slice(0, 6)
     : []
 
-  const tabCars = cars.filter(c => (c.owner_group || 'main') === ownerTab)
-  const activeCount = tabCars.filter(c => c.status === 'active').length
-  const inactiveCount = tabCars.filter(c => c.status === 'inactive').length
+  const activeCount = cars.filter(c => c.status === 'active').length
+  const inactiveCount = cars.filter(c => c.status === 'inactive').length
 
-  const tabLabels: Record<string, string> = { main: 'Основной парк', ilya: 'Парк Ильи' }
 
   return (
     <div className="space-y-5">
-      {/* Owner tabs */}
-      <div className="flex gap-2">
-        {(['main', 'ilya'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setOwnerTab(tab)}
-            className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all ${ownerTab === tab ? 'bg-[#4F46E5] text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
-          >
-            {tabLabels[tab]}
-          </button>
-        ))}
-      </div>
-
       {/* Summary */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Всего', value: tabCars.length, color: 'text-gray-900', bg: 'bg-white' },
+          { label: 'Всего', value: cars.length, color: 'text-gray-900', bg: 'bg-white' },
           { label: 'Активных', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'Неактивных', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
         ].map(s => (
@@ -193,9 +177,9 @@ export default function CarsPage() {
 
       <Card>
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-bold text-gray-900">{tabLabels[ownerTab]}</h2>
+          <h2 className="text-base font-bold text-gray-900">Автомобили</h2>
           <button
-            onClick={() => { setShowAdd(true); setForm({ make: '', model: '', plate: '', owner_group: ownerTab }); setFormErrors({}) }}
+            onClick={() => { setShowAdd(true); setForm({ make: '', model: '', plate: '', owner_group: 'main' }); setFormErrors({}) }}
             className="btn-primary flex items-center gap-2 px-4 py-2"
           >
             <Plus size={15} /> Добавить авто
@@ -244,7 +228,7 @@ export default function CarsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {tabCars.map(car => (
+              {cars.map(car => (
                 <tr
                   key={car.id}
                   ref={el => { rowRefs.current[car.id] = el }}
@@ -295,7 +279,7 @@ export default function CarsPage() {
                   </td>
                 </tr>
               ))}
-              {tabCars.length === 0 && (
+              {cars.length === 0 && (
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">Авто не добавлено</td></tr>
               )}
             </tbody>
@@ -307,20 +291,6 @@ export default function CarsPage() {
       {(showAdd || editCar) && (
         <Modal title={editCar ? 'Редактировать авто' : 'Добавить авто'} onClose={() => { setShowAdd(false); setEditCar(null); setFormErrors({}) }}>
           <form onSubmit={editCar ? handleEdit : handleAdd} className="space-y-4" noValidate>
-            <FormField label="Парк">
-              <div className="flex gap-2">
-                {(['main', 'ilya'] as const).map(g => (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => setForm(f => ({ ...f, owner_group: g }))}
-                    className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${form.owner_group === g ? 'bg-[#4F46E5] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                  >
-                    {tabLabels[g]}
-                  </button>
-                ))}
-              </div>
-            </FormField>
             <FormField label="Марка">
               <input value={form.make} onChange={e => { setForm(f => ({ ...f, make: e.target.value })); setFormErrors(p => ({ ...p, make: '' })) }} placeholder="Toyota" className={inputCls} />
               {formErrors.make && <p className="text-xs text-red-500 mt-1">{formErrors.make}</p>}
