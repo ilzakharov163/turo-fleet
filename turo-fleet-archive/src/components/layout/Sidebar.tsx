@@ -1,35 +1,54 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, Sun, Moon, ShieldAlert } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
 import { useTheme } from '@/components/ThemeContext'
 
 const nav = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд' },
-  { href: '/cars', icon: Car, label: 'Автомобили' },
-  { href: '/calendar', icon: Calendar, label: 'Календарь' },
-  { href: '/expenses', icon: DollarSign, label: 'Расходы' },
-  { href: '/analytics', icon: BarChart2, label: 'Аналитика' },
-  { href: '/maintenance', icon: Wrench, label: 'Техобслуживание' },
-  { href: '/team', icon: Users, label: 'Команда' },
-  { href: '/claims', icon: ShieldAlert, label: 'Клеймы' },
-  { href: '/log', icon: ClipboardList, label: 'История' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд', adminOnly: true },
+  { href: '/cars', icon: Car, label: 'Автомобили', adminOnly: true },
+  { href: '/calendar', icon: Calendar, label: 'Календарь', adminOnly: true },
+  { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
+  { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
+  { href: '/maintenance', icon: Wrench, label: 'Техобслуживание', adminOnly: true },
+  { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
+  { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
+  { href: '/log', icon: ClipboardList, label: 'История', adminOnly: true },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { dark, toggle } = useTheme()
+  const [role, setRole] = useState<'admin' | 'employee' | null>(null)
+
+  useEffect(() => {
+    async function loadRole() {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+      const r = (data?.role ?? 'admin') as 'admin' | 'employee'
+      setRole(r)
+      if (r === 'employee' && pathname !== '/expenses') {
+        router.replace('/expenses')
+      }
+    }
+    loadRole()
+  }, [pathname, router])
 
   async function handleLogout() {
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
   }
+
+  const visibleNav = role === 'employee' ? nav.filter(n => !n.adminOnly) : nav
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-[72px] bg-white border-r border-gray-100 flex flex-col items-center py-5 z-40 shadow-sm">
@@ -40,7 +59,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 flex flex-col items-center gap-1 w-full px-2">
-        {nav.map(({ href, icon: Icon, label }) => {
+        {visibleNav.map(({ href, icon: Icon, label }) => {
           const active = pathname === href
           return (
             <Link
@@ -65,8 +84,6 @@ export default function Sidebar() {
           )
         })}
       </nav>
-
-      {/* Theme toggle — hidden, TODO: restore when dark mode is fully styled */}
 
       {/* Logout */}
       <div className="w-full px-2">
