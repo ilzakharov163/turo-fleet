@@ -101,29 +101,32 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile bottom nav — visible only on mobile */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 flex items-center justify-around px-1 py-1" style={{ paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))' }}>
+      {/* Mobile bottom nav — scrollable when many items */}
+      <nav
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 flex items-center overflow-x-auto px-1 py-1 gap-0.5"
+        style={{ paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))', scrollbarWidth: 'none' }}
+      >
         {visibleNav.map(({ href, icon: Icon, label }) => {
           const active = pathname === href
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl min-w-0 flex-1 ${
+              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl flex-shrink-0 min-w-[52px] ${
                 active ? 'text-[#4F46E5]' : 'text-gray-400'
               }`}
             >
               <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-              <span className="text-[9px] font-medium leading-none truncate w-full text-center">{label}</span>
+              <span className="text-[9px] font-medium leading-none whitespace-nowrap">{label}</span>
             </Link>
           )
         })}
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl flex-1 text-gray-400 active:text-red-500"
+          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl flex-shrink-0 min-w-[52px] text-gray-400 active:text-red-500"
         >
           <LogOut size={20} strokeWidth={1.8} />
-          <span className="text-[9px] font-medium leading-none">Выйти</span>
+          <span className="text-[9px] font-medium leading-none whitespace-nowrap">Выйти</span>
         </button>
       </nav>
     </>
