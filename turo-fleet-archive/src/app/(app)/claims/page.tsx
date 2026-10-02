@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
-import { Plus, X, Pencil, AlertCircle, Wrench, Clock } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { Plus, X, Pencil, AlertCircle, Wrench, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 
@@ -14,6 +14,7 @@ interface Claim {
   car_id: string | null
   status: 'waiting' | 'in_repair' | 'done'
   opened_date: string | null
+  completed_date: string | null
   initial_payment_received: boolean
   supplement_paid: boolean
   still_listed: boolean
@@ -44,10 +45,20 @@ const emptyForm = {
   car_id: '',
   status: 'waiting' as Claim['status'],
   opened_date: '',
+  completed_date: '',
   initial_payment_received: false,
   supplement_paid: false,
   still_listed: true,
   notes: '',
+}
+
+function today() {
+  return format(new Date(), 'yyyy-MM-dd')
+}
+
+// Дата, по которой завершённый клейм относится к месяцу
+function doneDate(c: Claim): string | null {
+  return c.completed_date || c.opened_date || c.created_at || null
 }
 
 export default function ClaimsPage() {
@@ -57,6 +68,7 @@ export default function ClaimsPage() {
   const [editClaim, setEditClaim] = useState<Claim | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'in_repair' | 'done'>('all')
+  const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -82,6 +94,7 @@ export default function ClaimsPage() {
       car_id: c.car_id || '',
       status: c.status,
       opened_date: c.opened_date || '',
+      completed_date: c.completed_date || '',
       initial_payment_received: c.initial_payment_received,
       supplement_paid: c.supplement_paid,
       still_listed: c.still_listed,
@@ -97,16 +110,19 @@ export default function ClaimsPage() {
       car_id: form.car_id || null,
       status: form.status,
       opened_date: form.opened_date || null,
+      completed_date: form.status === 'done' ? (form.completed_date || today()) : null,
       initial_payment_received: form.initial_payment_received,
       supplement_paid: form.supplement_paid,
       still_listed: form.still_listed,
       notes: form.notes || null,
     }
     if (editClaim) {
-      await supabase.from('claims').update(payload).eq('id', editClaim.id)
+      const { error } = await supabase.from('claims').update(payload).eq('id', editClaim.id)
+      if (error) { alert(error.message); return }
       await log('update', 'claim', editClaim.id, payload)
     } else {
-      const { data } = await supabase.from('claims').insert(payload).select().single()
+      const { data, error: insErr } = await supabase.from('claims').insert(payload).select().single()
+      if (insErr) { alert(insErr.message); return }
       if (data) await log('create', 'claim', data.id, payload)
     }
     setShowModal(false)
@@ -131,19 +147,34 @@ export default function ClaimsPage() {
 
   async function setStatus(c: Claim, status: Claim['status']) {
     const supabase = createClient()
-    await supabase.from('claims').update({ status }).eq('id', c.id)
-    await log('update', 'claim', c.id, { status })
+    const update = { status, completed_date: status === 'done' ? today() : null }
+    const { error } = await supabase.from('claims').update(update).eq('id', c.id)
+    if (error) { alert(error.message); return }
+    await log('update', 'claim', c.id, update)
     load()
   }
 
-  const filtered = claims.filter(c => filterStatus === 'all' || c.status === filterStatus)
+  // Активные клеймы (ожидают / в ремонте) показываем в текущем месяце.
+  // Завершённые — только в том месяце, когда они были завершены.
+  const isCurrentMonth = isSameMonth(month, new Date())
+  const inMonth = claims.filter(c => {
+    if (c.status === 'done') {
+      const d = doneDate(c)
+      return d ? isSameMonth(parseISO(d), month) : false
+    }
+    return isCurrentMonth
+  })
+
+  const filtered = inMonth.filter(c => filterStatus === 'all' || c.status === filterStatus)
   const waiting = claims.filter(c => c.status === 'waiting').length
   const inRepair = claims.filter(c => c.status === 'in_repair').length
+  const doneThisMonth = inMonth.filter(c => c.status === 'done').length
+  const monthLabel = format(month, 'LLLL yyyy', { locale: ru })
 
   return (
-    <div className="p-8">
+    <div className="p-0 sm:p-2">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Клеймы и ремонт</h1>
           <p className="text-sm text-gray-400 mt-0.5">Отслеживание машин в очереди и в процессе ремонта</p>
@@ -156,8 +187,35 @@ export default function ClaimsPage() {
         </button>
       </div>
 
+      {/* Month switcher */}
+      <div className="flex items-center gap-2 mb-5">
+        <button
+          onClick={() => setMonth(m => subMonths(m, 1))}
+          className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
+          aria-label="Предыдущий месяц"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span className="min-w-[150px] text-center text-sm font-semibold text-gray-800 capitalize">{monthLabel}</span>
+        <button
+          onClick={() => setMonth(m => addMonths(m, 1))}
+          className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
+          aria-label="Следующий месяц"
+        >
+          <ChevronRight size={16} />
+        </button>
+        {!isCurrentMonth && (
+          <button
+            onClick={() => setMonth(startOfMonth(new Date()))}
+            className="ml-1 text-xs font-medium text-[#4F46E5] hover:underline"
+          >
+            Текущий месяц
+          </button>
+        )}
+      </div>
+
       {/* Summary chips */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-2 mb-5 flex-wrap">
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
           <Clock size={16} className="text-yellow-600" />
           <span className="text-sm font-semibold text-yellow-700">{waiting} ожидают ремонта</span>
@@ -166,10 +224,14 @@ export default function ClaimsPage() {
           <Wrench size={16} className="text-blue-600" />
           <span className="text-sm font-semibold text-blue-700">{inRepair} в ремонте</span>
         </div>
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500" />
+          <span className="text-sm font-semibold text-green-700">{doneThisMonth} завершено за месяц</span>
+        </div>
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 flex-wrap">
         {(['all', 'waiting', 'in_repair', 'done'] as const).map(s => (
           <button
             key={s}
@@ -185,13 +247,13 @@ export default function ClaimsPage() {
       {filtered.length === 0 ? (
         <div className="bg-white rounded-[18px] p-12 card-shadow border border-gray-100/80 text-center">
           <AlertCircle size={32} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-400 text-sm">Нет клеймов</p>
+          <p className="text-gray-400 text-sm">Нет клеймов за этот месяц</p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map(c => (
             <div key={c.id} className="bg-white rounded-[18px] p-5 card-shadow border border-gray-100/80">
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 mb-2 flex-wrap">
                     <span className="font-semibold text-gray-800">
@@ -207,12 +269,14 @@ export default function ClaimsPage() {
                       </span>
                     )}
                   </div>
-                  {c.opened_date && (
+                  {(c.opened_date || (c.status === 'done' && c.completed_date)) && (
                     <p className="text-xs text-gray-400 mb-3">
-                      Открыт: {format(parseISO(c.opened_date), 'd MMMM yyyy', { locale: ru })}
+                      {c.opened_date && <>Открыт: {format(parseISO(c.opened_date), 'd MMMM yyyy', { locale: ru })}</>}
+                      {c.opened_date && c.status === 'done' && c.completed_date && ' · '}
+                      {c.status === 'done' && c.completed_date && <>Завершён: {format(parseISO(c.completed_date), 'd MMMM yyyy', { locale: ru })}</>}
                     </p>
                   )}
-                  <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => toggleField(c, 'initial_payment_received')}
                       className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border transition-all ${c.initial_payment_received ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
@@ -254,7 +318,7 @@ export default function ClaimsPage() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-5">{editClaim ? 'Редактировать клейм' : 'Новый клейм'}</h2>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -276,6 +340,13 @@ export default function ClaimsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Дата открытия клейма</label>
                 <DatePicker value={form.opened_date} onChange={val => setForm(f => ({ ...f, opened_date: val }))} />
               </div>
+              {form.status === 'done' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата завершения</label>
+                  <DatePicker value={form.completed_date} onChange={val => setForm(f => ({ ...f, completed_date: val }))} />
+                  <p className="text-xs text-gray-400 mt-1">Если не указать — поставится сегодняшняя дата</p>
+                </div>
+              )}
               <div className="space-y-3">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input type="checkbox" checked={form.initial_payment_received} onChange={e => setForm(f => ({ ...f, initial_payment_received: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
