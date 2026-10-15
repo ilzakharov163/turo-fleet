@@ -12,6 +12,8 @@ const pageTitles: Record<string, string> = {
   '/expenses': 'Расходы',
   '/analytics': 'Аналитика',
   '/maintenance': 'Техобслуживание',
+  '/claims': 'Клеймы и ремонт',
+  '/stickers': 'Наклейки',
   '/team': 'Команда',
   '/log': 'История действий',
   '/settings': 'Личный кабинет',
