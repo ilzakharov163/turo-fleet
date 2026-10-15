@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert, Tag } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
@@ -16,6 +16,7 @@ const nav = [
   { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
   { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
   { href: '/maintenance', icon: Wrench, label: 'Тех.обсл', adminOnly: true },
+  { href: '/stickers', icon: Tag, label: 'Наклейки', adminOnly: true },
   { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
   { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
   { href: '/log', icon: ClipboardList, label: 'История', adminOnly: true },
