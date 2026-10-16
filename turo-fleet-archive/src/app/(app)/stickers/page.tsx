@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
-import { Plus, X, Check, Tag, History, CalendarDays } from 'lucide-react'
+import { Plus, X, Check, Tag, History, ArrowRight } from 'lucide-react'
 import { format, parseISO, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
@@ -25,6 +25,8 @@ interface StickerChange {
   id: string
   car_id: string
   changed_date: string
+  old_plate: string | null
+  new_plate: string | null
   created_at: string
 }
 
@@ -89,6 +91,8 @@ export default function StickersPage() {
 
   const [dateFor, setDateFor] = useState<Row | null>(null)
   const [customDate, setCustomDate] = useState('')
+  const [newPlate, setNewPlate] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const [openHistory, setOpenHistory] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
@@ -156,12 +160,27 @@ export default function StickersPage() {
     load()
   }
 
-  async function recordChange(carId: string, date: string) {
+  function openChange(r: Row) {
+    setDateFor(r)
+    setCustomDate(today())
+    setNewPlate('')
+  }
+
+  async function recordChange(carId: string, date: string, oldPlate: string | null, plate: string | null) {
     const supabase = createClient()
-    const { data, error } = await supabase.from('sticker_changes').insert({ car_id: carId, changed_date: date }).select().single()
-    if (error) { alert(error.message); return }
-    if (data) await log('create', 'sticker_change', data.id, { car_id: carId, changed_date: date })
+    const changed = !!plate && plate !== oldPlate
+    // Новый номер сразу пишем в карточку авто — он подтянется во все разделы
+    if (changed) {
+      const { error: carErr } = await supabase.from('cars').update({ plate }).eq('id', carId)
+      if (carErr) { alert(carErr.message); return false }
+      await log('update', 'car', carId, { plate_from: oldPlate, plate_to: plate, source: 'stickers' })
+    }
+    const payload = { car_id: carId, changed_date: date, old_plate: oldPlate, new_plate: changed ? plate : oldPlate }
+    const { data, error } = await supabase.from('sticker_changes').insert(payload).select().single()
+    if (error) { alert(error.message); return false }
+    if (data) await log('create', 'sticker_change', data.id, payload)
     load()
+    return true
   }
 
   async function deleteChange(ch: StickerChange) {
@@ -183,9 +202,12 @@ export default function StickersPage() {
 
   async function handleCustomDate(e: React.FormEvent) {
     e.preventDefault()
-    if (!dateFor || !customDate) return
-    await recordChange(dateFor.entry.car_id, customDate)
-    setDateFor(null)
+    if (!dateFor || !customDate || saving) return
+    const plate = newPlate.trim().toUpperCase().replace(/\s+/g, '')
+    setSaving(true)
+    const ok = await recordChange(dateFor.entry.car_id, customDate, dateFor.entry.car?.plate ?? null, plate || null)
+    setSaving(false)
+    if (ok) setDateFor(null)
   }
 
   const FILTERS: { key: Filter; label: string; count: number; active: string; idle: string; dot: string }[] = [
@@ -274,18 +296,11 @@ export default function StickersPage() {
                   </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
                     <button
-                      onClick={() => recordChange(r.entry.car_id, today())}
-                      title="Поменял сегодня"
+                      onClick={() => openChange(r)}
+                      title="Отметить замену наклеек"
                       className="inline-flex items-center gap-1 text-xs bg-green-50 hover:bg-green-100 text-green-700 font-semibold px-2.5 py-1.5 rounded-lg border border-green-200 transition-colors"
                     >
                       <Check size={14} /><span className="hidden sm:inline">Поменял</span>
-                    </button>
-                    <button
-                      onClick={() => { setDateFor(r); setCustomDate(today()) }}
-                      title="Указать другую дату замены"
-                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      <CalendarDays size={15} />
                     </button>
                     <button
                       onClick={() => setOpenHistory(showHist ? null : r.entry.id)}
@@ -310,6 +325,9 @@ export default function StickersPage() {
                     ) : r.history.map(h => (
                       <span key={h.id} className="inline-flex items-center gap-1 text-xs text-gray-600 bg-white border border-gray-200 rounded-full pl-2.5 pr-1 py-0.5">
                         {fmt(h.changed_date)}
+                        {h.old_plate && h.new_plate && h.old_plate !== h.new_plate && (
+                          <span className="text-gray-400">· {h.old_plate} → <span className="text-gray-700 font-medium">{h.new_plate}</span></span>
+                        )}
                         <button onClick={() => deleteChange(h)} className="p-0.5 text-gray-300 hover:text-red-500" aria-label="Удалить запись">
                           <X size={12} />
                         </button>
@@ -363,16 +381,45 @@ export default function StickersPage() {
         </div>
       )}
 
-      {/* Custom date modal */}
+      {/* Change stickers modal */}
       {dateFor && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setDateFor(null) }}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
-            <h2 className="text-lg font-semibold mb-1">Дата замены</h2>
-            <p className="text-sm text-gray-400 mb-4">{carName(dateFor.entry.car)}</p>
+            <h2 className="text-lg font-semibold mb-1">Замена наклеек</h2>
+            <p className="text-sm text-gray-400 mb-4">{dateFor.entry.car ? `${dateFor.entry.car.make} ${dateFor.entry.car.model}` : '— авто удалено —'}</p>
             <form onSubmit={handleCustomDate} className="space-y-4">
-              <DatePicker value={customDate} onChange={val => setCustomDate(val)} />
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">Сохранить</button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Номер</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">Старый</div>
+                    <div className="px-3 py-2 rounded-lg bg-gray-100 text-sm font-semibold text-gray-500 line-through truncate">{dateFor.entry.car?.plate || '—'}</div>
+                  </div>
+                  <ArrowRight size={16} className="text-gray-300 mt-5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 mb-1">Новый</div>
+                    <input
+                      id="new-plate"
+                      autoFocus
+                      value={newPlate}
+                      onChange={e => setNewPlate(e.target.value.toUpperCase())}
+                      placeholder="Новый номер"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">Новый номер обновится везде: в «Авто», календаре, расходах, клеймах. Оставь пустым, если номер не менялся.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Дата замены</label>
+                <DatePicker value={customDate} onChange={val => setCustomDate(val)} />
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button type="submit" disabled={saving} className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                  {saving ? 'Сохраняю…' : 'Поменял'}
+                </button>
                 <button type="button" onClick={() => setDateFor(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
               </div>
             </form>
