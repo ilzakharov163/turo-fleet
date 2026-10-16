@@ -56,20 +56,26 @@ function plural(n: number, one: string, few: string, many: string) {
   return many
 }
 
-const LEVEL_STYLES: Record<Level, { card: string; badge: string; dot: string }> = {
-  overdue: { card: 'border-red-200 bg-red-50/40', badge: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' },
-  never: { card: 'border-red-200 bg-red-50/40', badge: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500' },
-  soon: { card: 'border-yellow-200 bg-yellow-50/40', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200', dot: 'bg-yellow-400' },
-  ok: { card: 'border-gray-100/80', badge: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500' },
+const LEVEL_STYLES: Record<Level, { card: string; badge: string; dot: string; text: string }> = {
+  overdue: { card: 'border-red-200 bg-red-50/40', badge: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500', text: 'text-red-600' },
+  never: { card: 'border-red-200 bg-red-50/40', badge: 'bg-red-100 text-red-700 border-red-200', dot: 'bg-red-500', text: 'text-red-600' },
+  soon: { card: 'border-yellow-200 bg-yellow-50/40', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200', dot: 'bg-yellow-400', text: 'text-yellow-700' },
+  ok: { card: 'border-gray-100/80', badge: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500', text: 'text-green-700' },
 }
 
-function levelLabel(r: Row) {
-  if (r.level === 'never') return 'Нет данных о замене'
-  const d = r.daysLeft ?? 0
-  if (d < 0) return `Пора менять · просрочено на ${-d} ${plural(-d, 'день', 'дня', 'дней')}`
-  if (d === 0) return 'Пора менять · сегодня'
-  return `Через ${d} ${plural(d, 'день', 'дня', 'дней')}`
+function fmtShort(d: string | Date) {
+  return format(typeof d === 'string' ? parseISO(d) : d, 'd MMM', { locale: ru })
 }
+
+function shortLabel(r: Row) {
+  if (r.level === 'never') return 'нет данных'
+  const d = r.daysLeft ?? 0
+  if (d < 0) return `просрочено ${-d} ${plural(-d, 'день', 'дня', 'дней')}`
+  if (d === 0) return 'менять сегодня'
+  return `через ${d} ${plural(d, 'день', 'дня', 'дней')}`
+}
+
+type Filter = 'all' | 'due' | 'soon' | 'ok'
 
 export default function StickersPage() {
   const [entries, setEntries] = useState<StickerCar[]>([])
@@ -85,6 +91,7 @@ export default function StickersPage() {
   const [customDate, setCustomDate] = useState('')
 
   const [openHistory, setOpenHistory] = useState<string | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -181,13 +188,26 @@ export default function StickersPage() {
     setDateFor(null)
   }
 
+  const FILTERS: { key: Filter; label: string; count: number; active: string; idle: string; dot: string }[] = [
+    { key: 'all', label: 'Все', count: rows.length, active: 'bg-[#4F46E5] text-white border-[#4F46E5]', idle: 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50', dot: 'bg-gray-300' },
+    { key: 'due', label: 'Пора менять', count: overdue, active: 'bg-red-600 text-white border-red-600', idle: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100', dot: 'bg-red-500' },
+    { key: 'soon', label: 'Скоро', count: soon, active: 'bg-yellow-500 text-white border-yellow-500', idle: 'bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100', dot: 'bg-yellow-400' },
+    { key: 'ok', label: 'В порядке', count: ok, active: 'bg-green-600 text-white border-green-600', idle: 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100', dot: 'bg-green-500' },
+  ]
+
+  const visible = rows.filter(r => {
+    if (filter === 'all') return true
+    if (filter === 'due') return r.level === 'overdue' || r.level === 'never'
+    return r.level === filter
+  })
+
   return (
     <div className="p-0 sm:p-2">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-gray-800">Наклейки</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Замена наклеек каждые {INTERVAL_DAYS} дней (полтора месяца)</p>
+          <p className="text-sm text-gray-400 mt-0.5">Замена каждые {INTERVAL_DAYS} дней · жёлтым за {WARN_DAYS} дней до срока</p>
         </div>
         <button
           onClick={openAddModal}
@@ -197,81 +217,68 @@ export default function StickersPage() {
         </button>
       </div>
 
-      {/* Summary chips */}
+      {/* Filter switcher */}
       {rows.length > 0 && (
-        <div className="flex gap-2 mb-5 flex-wrap">
-          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-sm font-semibold text-red-700">{overdue} пора менять</span>
-          </div>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-yellow-400" />
-            <span className="text-sm font-semibold text-yellow-700">{soon} скоро (≤ {WARN_DAYS} дн.)</span>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-sm font-semibold text-green-700">{ok} в порядке</span>
-          </div>
+        <div className="flex gap-2 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+          {FILTERS.map(f => {
+            const isActive = filter === f.key
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`flex-shrink-0 inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-semibold border transition-colors ${isActive ? f.active : f.idle}`}
+              >
+                {f.key !== 'all' && <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white' : f.dot}`} />}
+                {f.label}
+                <span className={`min-w-[20px] px-1.5 rounded-full text-xs leading-5 text-center ${isActive ? 'bg-white/25' : 'bg-white/70'}`}>{f.count}</span>
+              </button>
+            )
+          })}
         </div>
       )}
 
       {/* List */}
       {loading ? null : rows.length === 0 ? (
-        <div className="bg-white rounded-[18px] p-12 card-shadow border border-gray-100/80 text-center">
-          <Tag size={32} className="text-gray-300 mx-auto mb-3" />
+        <div className="bg-white rounded-[18px] p-10 card-shadow border border-gray-100/80 text-center">
+          <Tag size={28} className="text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500 text-sm font-medium">Пока нет машин</p>
           <p className="text-gray-400 text-sm mt-1">Нажми «Добавить машины» и выбери авто из списка</p>
         </div>
+      ) : visible.length === 0 ? (
+        <div className="bg-white rounded-[18px] p-8 card-shadow border border-gray-100/80 text-center text-sm text-gray-400">
+          В этой группе машин нет
+        </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map(r => {
+        <div className="bg-white rounded-[18px] card-shadow border border-gray-100/80 overflow-hidden divide-y divide-gray-100">
+          {visible.map(r => {
             const st = LEVEL_STYLES[r.level]
             const showHist = openHistory === r.entry.id
+            const car = r.entry.car
             return (
-              <div key={r.entry.id} className={`bg-white rounded-[18px] p-5 card-shadow border ${st.card}`}>
-                <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+              <div key={r.entry.id} className={r.level === 'overdue' || r.level === 'never' ? 'bg-red-50/40' : r.level === 'soon' ? 'bg-yellow-50/40' : ''}>
+                <div className="flex items-center gap-3 px-4 py-2.5">
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${st.dot}`} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2 flex-wrap">
-                      <span className="font-semibold text-gray-800">{carName(r.entry.car)}</span>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${st.badge}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                        {levelLabel(r)}
-                      </span>
+                    <div className="text-sm font-semibold text-gray-800 truncate">
+                      {car ? <>{car.make} {car.model} <span className="font-normal text-gray-400">{car.plate}</span></> : '— авто удалено —'}
                     </div>
-                    <div className="flex gap-x-5 gap-y-1 flex-wrap text-xs text-gray-500">
-                      <span>Последняя замена: <b className="text-gray-700 font-medium">{r.last ? fmt(r.last) : '—'}</b></span>
-                      <span>Следующая: <b className="text-gray-700 font-medium">{r.next ? fmt(r.next) : 'сразу'}</b></span>
+                    <div className="text-xs text-gray-500 truncate">
+                      <span className={`font-semibold ${st.text}`}>{shortLabel(r)}</span>
+                      <span className="text-gray-300"> · </span>
+                      {r.last ? <>замена {fmtShort(r.last)}</> : 'замен не было'}
+                      {r.next && <span className="sm:hidden"><span className="text-gray-300"> · </span>до {fmtShort(r.next)}</span>}
                     </div>
-
-                    {r.history.length > 0 && (
-                      <button
-                        onClick={() => setOpenHistory(showHist ? null : r.entry.id)}
-                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-gray-600"
-                      >
-                        <History size={13} /> История замен ({r.history.length})
-                      </button>
-                    )}
-                    {showHist && (
-                      <ul className="mt-2 space-y-1">
-                        {r.history.map(h => (
-                          <li key={h.id} className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-1.5 w-fit">
-                            <Check size={13} className="text-green-500" />
-                            {fmt(h.changed_date)}
-                            <button onClick={() => deleteChange(h)} className="ml-1 text-gray-300 hover:text-red-500" aria-label="Удалить запись">
-                              <X size={13} />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
                   </div>
-
-                  <div className="flex items-center gap-1 flex-shrink-0 flex-wrap">
+                  <div className="hidden sm:block text-xs text-gray-400 text-right w-32 flex-shrink-0">
+                    {r.next ? <>Следующая<br /><span className="text-gray-700 font-medium">{fmt(r.next)}</span></> : <span className="text-red-500 font-medium">Нужна замена</span>}
+                  </div>
+                  <div className="flex items-center gap-0.5 flex-shrink-0">
                     <button
                       onClick={() => recordChange(r.entry.car_id, today())}
-                      className="inline-flex items-center gap-1.5 text-xs bg-green-50 hover:bg-green-100 text-green-700 font-semibold px-3 py-1.5 rounded-lg border border-green-200 transition-colors whitespace-nowrap"
+                      title="Поменял сегодня"
+                      className="inline-flex items-center gap-1 text-xs bg-green-50 hover:bg-green-100 text-green-700 font-semibold px-2.5 py-1.5 rounded-lg border border-green-200 transition-colors"
                     >
-                      <Check size={14} /> Поменял сегодня
+                      <Check size={14} /><span className="hidden sm:inline">Поменял</span>
                     </button>
                     <button
                       onClick={() => { setDateFor(r); setCustomDate(today()) }}
@@ -281,14 +288,35 @@ export default function StickersPage() {
                       <CalendarDays size={15} />
                     </button>
                     <button
+                      onClick={() => setOpenHistory(showHist ? null : r.entry.id)}
+                      title="История замен"
+                      className={`p-1.5 rounded-lg transition-colors ${showHist ? 'bg-gray-100 text-gray-700' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                    >
+                      <History size={15} />
+                    </button>
+                    <button
                       onClick={() => removeCar(r)}
                       title="Убрать из раздела"
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-300 hover:text-red-500 transition-colors"
                     >
                       <X size={15} />
                     </button>
                   </div>
                 </div>
+                {showHist && (
+                  <div className="px-4 pb-3 pl-9 flex flex-wrap gap-1.5">
+                    {r.history.length === 0 ? (
+                      <span className="text-xs text-gray-400">Замен ещё не было</span>
+                    ) : r.history.map(h => (
+                      <span key={h.id} className="inline-flex items-center gap-1 text-xs text-gray-600 bg-white border border-gray-200 rounded-full pl-2.5 pr-1 py-0.5">
+                        {fmt(h.changed_date)}
+                        <button onClick={() => deleteChange(h)} className="p-0.5 text-gray-300 hover:text-red-500" aria-label="Удалить запись">
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -305,7 +333,7 @@ export default function StickersPage() {
               {available.length === 0 ? (
                 <p className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-3">Все машины уже добавлены</p>
               ) : (
-                <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
                   {available.map(c => (
                     <label key={c.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-gray-50">
                       <input
