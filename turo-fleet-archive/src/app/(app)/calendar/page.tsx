@@ -85,7 +85,7 @@ export default function CalendarPage() {
   }
 
   // Расчёт простоя для каждого авто
-  const activeCars = cars.filter(c => !c.delisted)
+  const activeCars = cars.filter(c => !c.delisted).sort((a, b) => `${a.make} ${a.model} ${a.plate}`.localeCompare(`${b.make} ${b.model} ${b.plate}`))
   const payrollRows: PayrollRow[] = activeCars.map(car => {
     const monthBlocks = blocks.filter(b => b.car_id === car.id).filter(b => {
       const s = parseISO(b.start_date)
@@ -150,12 +150,13 @@ export default function CalendarPage() {
         {/* Cars rows */}
         {activeCars.map(car => (
           <div key={car.id} className="grid grid-cols-[180px_repeat(31,minmax(28px,1fr))] gap-px mb-0.5">
-            <div className="text-xs text-gray-600 flex items-center pr-2 truncate">{car.make} {car.model}</div>
+            <div className="text-xs text-gray-600 flex items-center gap-1.5 pr-2 min-w-0" title={`${car.make} ${car.model} · ${car.plate}`}><span className="truncate">{car.make} {car.model}</span><span className="flex-shrink-0 font-semibold text-gray-800 tabular-nums">{car.plate}</span></div>
             {days.map(d => {
               const bl = isBlocked(car.id, d)
               return (
                 <button
                   key={d.toISOString()}
+                  title={bl ? `${car.make} ${car.model} · ${car.plate}${bl.reason ? " — " + bl.reason : ""}` : `${car.plate} · ${format(d, "d MMM", { locale: ru })}`}
                   onClick={() => {
                     if (bl) {
                       setEditBlock(bl)
@@ -192,7 +193,7 @@ export default function CalendarPage() {
           <tbody>
             {payrollRows.map(({ car, inactiveDays, salary }) => (
               <tr key={car.id} className="border-b last:border-0">
-                <td className="py-2">{car.make} {car.model}</td>
+                <td className="py-2">{car.make} {car.model} <span className="ml-1 text-xs font-semibold text-gray-500">{car.plate}</span></td>
                 <td className="py-2 text-center text-gray-500">{inactiveDays}</td>
                 <td className={`py-2 text-right font-semibold ${
                   salary === 150 ? 'text-green-600' : salary === 75 ? 'text-yellow-600' : 'text-red-500'
