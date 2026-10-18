@@ -23,6 +23,7 @@ export default function ExpensesPage() {
   const [uploading, setUploading] = useState(false)
   const [filterCar, setFilterCar] = useState('')
   const [filterMonth, setFilterMonth] = useState(format(new Date(), 'yyyy-MM'))
+  const [filterCat, setFilterCat] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [deleteExpense, setDeleteExpense] = useState<Expense | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -227,11 +228,14 @@ export default function ExpensesPage() {
   }).reverse()
 
 
-  const filtered = expenses.filter(e => {
-    const matchMonth = filterMonth === 'all' || e.date.startsWith(filterMonth)
-    const matchCar = !filterCar || e.car_id === filterCar
-    return matchMonth && matchCar
-  })
+  const baseFiltered = expenses.filter(e => (filterMonth === 'all' || e.date.startsWith(filterMonth)) && (!filterCar || e.car_id === filterCar))
+  const catStats = [...new Set([...EXPENSE_CATEGORIES, ...baseFiltered.map(e => e.title)])]
+    .map(name => {
+      const items = baseFiltered.filter(e => e.title === name)
+      return { name, count: items.length, sum: items.reduce((s, e) => s + Number(e.amount), 0) }
+    })
+    .filter(c => c.count > 0)
+  const filtered = baseFiltered.filter(e => !filterCat || e.title === filterCat)
   const totalFiltered = filtered.reduce((s, e) => s + Number(e.amount), 0)
   const paidTotal = filtered.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
   const unpaidTotal = totalFiltered - paidTotal
@@ -272,6 +276,32 @@ export default function ExpensesPage() {
           </button>
         ))}
       </div>
+
+      {/* Category filter */}
+      {catStats.length > 0 && (
+        <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+          <button
+            onClick={() => setFilterCat('')}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${!filterCat ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
+          >
+            Все статьи
+            <span className={`text-xs ${!filterCat ? 'text-white/70' : 'text-gray-400'}`}>{baseFiltered.length}</span>
+          </button>
+          {catStats.map(cat => {
+            const active = filterCat === cat.name
+            return (
+              <button
+                key={cat.name}
+                onClick={() => setFilterCat(active ? '' : cat.name)}
+                className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${active ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
+              >
+                {cat.name}
+                <span className={`text-xs ${active ? 'text-white/70' : 'text-gray-400'}`}>{cat.count} · ${cat.sum.toFixed(0)}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="flex items-center gap-4 mb-6">
         <Select
