@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
-import { Plus, X, Pencil, AlertCircle, Wrench, Clock, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote } from 'lucide-react'
 import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
@@ -23,22 +23,10 @@ interface Claim {
   car?: Car
 }
 
-const STATUS_LABELS: Record<string, string> = {
+const STATUS_LABELS: Record<Claim['status'], string> = {
   waiting: 'Ожидает ремонта',
   in_repair: 'В ремонте',
   done: 'Завершён',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  waiting: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  in_repair: 'bg-blue-100 text-blue-700 border-blue-200',
-  done: 'bg-green-100 text-green-700 border-green-200',
-}
-
-const STATUS_DOT: Record<string, string> = {
-  waiting: 'bg-yellow-400',
-  in_repair: 'bg-blue-500',
-  done: 'bg-green-500',
 }
 
 const emptyForm = {
@@ -56,35 +44,47 @@ function today() {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
+const short = (iso: string) => format(parseISO(iso), 'd MMM', { locale: ru })
+
 // Дата, по которой завершённый клейм относится к месяцу
 function doneDate(c: Claim): string | null {
   return c.completed_date || c.opened_date || c.created_at || null
 }
 
+function CarTitle({ c }: { c: Claim }) {
+  return c.car ? (
+    <>
+      {c.car.make} {c.car.model} <span className="font-semibold text-gray-900">{c.car.plate}</span>
+    </>
+  ) : <span className="text-gray-400">— без авто —</span>
+}
+
 export default function ClaimsPage() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [cars, setCars] = useState<Car[]>([])
+  const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editClaim, setEditClaim] = useState<Claim | null>(null)
   const [form, setForm] = useState(emptyForm)
-  const [filterStatus, setFilterStatus] = useState<'all' | 'waiting' | 'in_repair' | 'done'>('all')
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
+  const [openNotes, setOpenNotes] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
     const [claimsRes, carsRes] = await Promise.all([
-      supabase.from('claims').select('*, car:cars(*)').order('created_at', { ascending: false }),
+      supabase.from('claims').select('*, car:cars(*)').order('opened_date', { ascending: true }),
       supabase.from('cars').select('*').order('make'),
     ])
-    setClaims(claimsRes.data as Claim[] || [])
+    setClaims((claimsRes.data as Claim[]) || [])
     setCars(carsRes.data || [])
+    setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
   function openAdd() {
     setEditClaim(null)
-    setForm(emptyForm)
+    setForm({ ...emptyForm, opened_date: today() })
     setShowModal(true)
   }
 
@@ -121,8 +121,8 @@ export default function ClaimsPage() {
       if (error) { alert(error.message); return }
       await log('update', 'claim', editClaim.id, payload)
     } else {
-      const { data, error: insErr } = await supabase.from('claims').insert(payload).select().single()
-      if (insErr) { alert(insErr.message); return }
+      const { data, error } = await supabase.from('claims').insert(payload).select().single()
+      if (error) { alert(error.message); return }
       if (data) await log('create', 'claim', data.id, payload)
     }
     setShowModal(false)
@@ -134,15 +134,17 @@ export default function ClaimsPage() {
     const supabase = createClient()
     await supabase.from('claims').delete().eq('id', c.id)
     await log('delete', 'claim', c.id, { car_id: c.car_id })
+    setShowModal(false)
     load()
   }
 
   async function toggleField(c: Claim, field: 'initial_payment_received' | 'supplement_paid') {
-    const supabase = createClient()
     const val = !c[field]
-    await supabase.from('claims').update({ [field]: val }).eq('id', c.id)
+    setClaims(prev => prev.map(x => (x.id === c.id ? { ...x, [field]: val } : x)))
+    const supabase = createClient()
+    const { error } = await supabase.from('claims').update({ [field]: val }).eq('id', c.id)
+    if (error) { alert(error.message); load(); return }
     await log('update', 'claim', c.id, { [field]: val })
-    load()
   }
 
   async function setStatus(c: Claim, status: Claim['status']) {
@@ -154,172 +156,145 @@ export default function ClaimsPage() {
     load()
   }
 
-  // Активные клеймы (ожидают / в ремонте) показываем в текущем месяце.
-  // Завершённые — только в том месяце, когда они были завершены.
-  const isCurrentMonth = isSameMonth(month, new Date())
-  const inMonth = claims.filter(c => {
-    if (c.status === 'done') {
+  const waiting = claims.filter(c => c.status === 'waiting')
+  const inRepair = claims.filter(c => c.status === 'in_repair')
+  const done = claims
+    .filter(c => {
+      if (c.status !== 'done') return false
       const d = doneDate(c)
       return d ? isSameMonth(parseISO(d), month) : false
-    }
-    return isCurrentMonth
-  })
-
-  const filtered = inMonth.filter(c => filterStatus === 'all' || c.status === filterStatus)
-  const waiting = claims.filter(c => c.status === 'waiting').length
-  const inRepair = claims.filter(c => c.status === 'in_repair').length
-  const doneThisMonth = inMonth.filter(c => c.status === 'done').length
+    })
+    .sort((a, b) => (doneDate(b) || '').localeCompare(doneDate(a) || ''))
+  const isCurrentMonth = isSameMonth(month, new Date())
   const monthLabel = format(month, 'LLLL yyyy', { locale: ru })
 
-  return (
-    <div className="p-0 sm:p-2">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Клеймы и ремонт</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Отслеживание машин в очереди и в процессе ремонта</p>
+  // ── Строка активного клейма ──
+  function ActiveRow({ c }: { c: Claim }) {
+    const notesOpen = openNotes === c.id
+    return (
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+          <div className="flex-1 min-w-[180px]">
+            <p className="text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+            <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+              {c.opened_date ? `открыт ${short(c.opened_date)}` : 'дата не указана'}
+              {c.still_listed && <span className="text-purple-500">· листинг активен</span>}
+              {c.notes && (
+                <button onClick={() => setOpenNotes(notesOpen ? null : c.id)} className="inline-flex items-center gap-0.5 text-gray-400 hover:text-gray-600">
+                  · <StickyNote size={11} /> заметка
+                </button>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => toggleField(c, 'initial_payment_received')}
+              title="Initial payment получен"
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${c.initial_payment_received ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'}`}
+            >
+              {c.initial_payment_received ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-gray-300" />} Initial
+            </button>
+            <button
+              onClick={() => toggleField(c, 'supplement_paid')}
+              title="Supplement оплачен"
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${c.supplement_paid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'}`}
+            >
+              {c.supplement_paid ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-red-300" />} Supplement
+            </button>
+          </div>
+          <div className="flex items-center gap-1 ml-auto">
+            {c.status === 'waiting' ? (
+              <button onClick={() => setStatus(c, 'in_repair')} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 whitespace-nowrap">→ В ремонт</button>
+            ) : (
+              <button onClick={() => setStatus(c, 'done')} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 whitespace-nowrap">→ Завершить</button>
+            )}
+            <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={14} /></button>
+          </div>
         </div>
-        <button
-          onClick={openAdd}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
+        {notesOpen && c.notes && <p className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">{c.notes}</p>}
+      </div>
+    )
+  }
+
+  function Section({ title, dot, items, empty }: { title: string; dot: string; items: Claim[]; empty: string }) {
+    return (
+      <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+          <span className={`w-2 h-2 rounded-full ${dot}`} />
+          <h2 className="text-sm font-bold text-gray-900">{title}</h2>
+          <span className="text-xs font-semibold text-gray-400">{items.length}</span>
+        </div>
+        {items.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-gray-400">{empty}</p>
+        ) : (
+          <div className="divide-y divide-gray-100">{items.map(c => <ActiveRow key={c.id} c={c} />)}</div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Клеймы и ремонт</h1>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {loading ? 'Загрузка…' : `${waiting.length} ждут ремонта · ${inRepair.length} в ремонте`}
+          </p>
+        </div>
+        <button onClick={openAdd} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
           <Plus size={16} /> Добавить клейм
         </button>
       </div>
 
-      {/* Month switcher */}
-      <div className="flex items-center gap-2 mb-5">
-        <button
-          onClick={() => setMonth(m => subMonths(m, 1))}
-          className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
-          aria-label="Предыдущий месяц"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className="min-w-[150px] text-center text-sm font-semibold text-gray-800 capitalize">{monthLabel}</span>
-        <button
-          onClick={() => setMonth(m => addMonths(m, 1))}
-          className="p-2 rounded-lg bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
-          aria-label="Следующий месяц"
-        >
-          <ChevronRight size={16} />
-        </button>
-        {!isCurrentMonth && (
-          <button
-            onClick={() => setMonth(startOfMonth(new Date()))}
-            className="ml-1 text-xs font-medium text-[#4F46E5] hover:underline"
-          >
-            Текущий месяц
-          </button>
-        )}
-      </div>
+      {!loading && (
+        <>
+          <Section title="Ожидают ремонта" dot="bg-yellow-400" items={waiting} empty="Нет машин в очереди" />
+          <Section title="В ремонте" dot="bg-blue-500" items={inRepair} empty="Сейчас в ремонте ничего нет" />
 
-      {/* Summary chips */}
-      <div className="flex gap-2 mb-5 flex-wrap">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-          <Clock size={16} className="text-yellow-600" />
-          <span className="text-sm font-semibold text-yellow-700">{waiting} ожидают ремонта</span>
-        </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-          <Wrench size={16} className="text-blue-600" />
-          <span className="text-sm font-semibold text-blue-700">{inRepair} в ремонте</span>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm font-semibold text-green-700">{doneThisMonth} завершено за месяц</span>
-        </div>
-      </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-2 mb-5 flex-wrap">
-        {(['all', 'waiting', 'in_repair', 'done'] as const).map(s => (
-          <button
-            key={s}
-            onClick={() => setFilterStatus(s)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterStatus === s ? 'bg-[#4F46E5] text-white' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50'}`}
-          >
-            {s === 'all' ? 'Все' : STATUS_LABELS[s]}
-          </button>
-        ))}
-      </div>
-
-      {/* Claims list */}
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-[18px] p-12 card-shadow border border-gray-100/80 text-center">
-          <AlertCircle size={32} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-400 text-sm">Нет клеймов за этот месяц</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map(c => (
-            <div key={c.id} className="bg-white rounded-[18px] p-5 card-shadow border border-gray-100/80">
-              <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2 flex-wrap">
-                    <span className="font-semibold text-gray-800">
-                      {c.car ? `${c.car.make} ${c.car.model} ${c.car.plate}` : '— без авто —'}
-                    </span>
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${STATUS_COLORS[c.status]}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[c.status]}`} />
-                      {STATUS_LABELS[c.status]}
-                    </span>
-                    {c.still_listed && c.status !== 'done' && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-purple-50 text-purple-600 border border-purple-100 font-medium">
-                        Листинг активен
-                      </span>
-                    )}
-                  </div>
-                  {(c.opened_date || (c.status === 'done' && c.completed_date)) && (
-                    <p className="text-xs text-gray-400 mb-3">
-                      {c.opened_date && <>Открыт: {format(parseISO(c.opened_date), 'd MMMM yyyy', { locale: ru })}</>}
-                      {c.opened_date && c.status === 'done' && c.completed_date && ' · '}
-                      {c.status === 'done' && c.completed_date && <>Завершён: {format(parseISO(c.completed_date), 'd MMMM yyyy', { locale: ru })}</>}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <button
-                      onClick={() => toggleField(c, 'initial_payment_received')}
-                      className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border transition-all ${c.initial_payment_received ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
-                    >
-                      <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center ${c.initial_payment_received ? 'bg-green-500 border-green-500' : 'border-gray-300'}`}>
-                        {c.initial_payment_received && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
-                      </span>
-                      Initial payment
-                    </button>
-                    <button
-                      onClick={() => toggleField(c, 'supplement_paid')}
-                      className={`flex items-center gap-2 text-sm font-medium px-3 py-1.5 rounded-lg border transition-all ${c.supplement_paid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'}`}
-                    >
-                      <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center ${c.supplement_paid ? 'bg-green-500 border-green-500' : 'border-red-300'}`}>
-                        {c.supplement_paid && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
-                      </span>
-                      Supplement {c.supplement_paid ? 'оплачен' : 'не оплачен'}
-                    </button>
-                  </div>
-                  {c.notes && (
-                    <p className="text-sm text-gray-500 mt-3 bg-gray-50 rounded-lg px-3 py-2">{c.notes}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {c.status === 'waiting' && (
-                    <button onClick={() => setStatus(c, 'in_repair')} className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 font-medium px-3 py-1.5 rounded-lg border border-blue-100 transition-colors whitespace-nowrap">→ В ремонт</button>
-                  )}
-                  {c.status === 'in_repair' && (
-                    <button onClick={() => setStatus(c, 'done')} className="text-xs bg-green-50 hover:bg-green-100 text-green-600 font-medium px-3 py-1.5 rounded-lg border border-green-100 transition-colors whitespace-nowrap">→ Завершить</button>
-                  )}
-                  <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"><Pencil size={15} /></button>
-                  <button onClick={() => handleDelete(c)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"><X size={15} /></button>
-                </div>
+          {/* Завершённые — по месяцам, без Initial/Supplement */}
+          <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 flex-wrap">
+              <span className="w-2 h-2 rounded-full bg-green-500" />
+              <h2 className="text-sm font-bold text-gray-900">Завершены</h2>
+              <span className="text-xs font-semibold text-gray-400">{done.length}</span>
+              <div className="flex items-center gap-1 ml-auto">
+                <button onClick={() => setMonth(m => subMonths(m, 1))} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" aria-label="Предыдущий месяц"><ChevronLeft size={15} /></button>
+                <span className="text-xs font-semibold text-gray-700 capitalize min-w-[100px] text-center">{monthLabel}</span>
+                <button onClick={() => setMonth(m => addMonths(m, 1))} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100" aria-label="Следующий месяц"><ChevronRight size={15} /></button>
+                {!isCurrentMonth && (
+                  <button onClick={() => setMonth(startOfMonth(new Date()))} className="text-[11px] font-medium text-[#4F46E5] hover:underline ml-1">Текущий</button>
+                )}
               </div>
             </div>
-          ))}
-        </div>
+            {done.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-gray-400">В этом месяце завершённых нет</p>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {done.map(c => (
+                  <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <Check size={14} className="text-green-500 flex-shrink-0" />
+                    <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      завершён {c.completed_date ? short(c.completed_date) : '—'}
+                    </span>
+                    <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-5">{editClaim ? 'Редактировать клейм' : 'Новый клейм'}</h2>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-semibold">{editClaim ? 'Редактировать клейм' : 'Новый клейм'}</h2>
+              <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
             <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
@@ -330,42 +305,55 @@ export default function ClaimsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Статус</label>
-                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Claim['status'] }))} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  <option value="waiting">Ожидает ремонта</option>
-                  <option value="in_repair">В ремонте</option>
-                  <option value="done">Завершён</option>
-                </select>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['waiting', 'in_repair', 'done'] as const).map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, status: s }))}
+                      className={`px-2 py-2 rounded-lg border text-xs font-semibold transition-colors ${form.status === s ? 'border-[#4F46E5] bg-indigo-50 text-[#4F46E5]' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      {STATUS_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Дата открытия клейма</label>
-                <DatePicker value={form.opened_date} onChange={val => setForm(f => ({ ...f, opened_date: val }))} />
-              </div>
-              {form.status === 'done' && (
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Дата завершения</label>
-                  <DatePicker value={form.completed_date} onChange={val => setForm(f => ({ ...f, completed_date: val }))} />
-                  <p className="text-xs text-gray-400 mt-1">Если не указать — поставится сегодняшняя дата</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Открыт</label>
+                  <DatePicker value={form.opened_date} onChange={val => setForm(f => ({ ...f, opened_date: val }))} />
+                </div>
+                {form.status === 'done' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Завершён</label>
+                    <DatePicker value={form.completed_date} onChange={val => setForm(f => ({ ...f, completed_date: val }))} />
+                  </div>
+                )}
+              </div>
+              {form.status !== 'done' && (
+                <div className="space-y-2.5">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={form.initial_payment_received} onChange={e => setForm(f => ({ ...f, initial_payment_received: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-gray-700">Initial payment получен</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={form.supplement_paid} onChange={e => setForm(f => ({ ...f, supplement_paid: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-gray-700">Supplement оплачен</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={form.still_listed} onChange={e => setForm(f => ({ ...f, still_listed: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
+                    <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб)</span>
+                  </label>
                 </div>
               )}
-              <div className="space-y-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={form.initial_payment_received} onChange={e => setForm(f => ({ ...f, initial_payment_received: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-gray-700">Initial payment получен</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={form.supplement_paid} onChange={e => setForm(f => ({ ...f, supplement_paid: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-gray-700">Supplement оплачен</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input type="checkbox" checked={form.still_listed} onChange={e => setForm(f => ({ ...f, still_listed: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                  <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб)</span>
-                </label>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Заметки</label>
                 <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Описание повреждений, детали клейма..." rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
               </div>
               <div className="flex gap-3 pt-2">
+                {editClaim && (
+                  <button type="button" onClick={() => handleDelete(editClaim)} className="px-4 py-2 rounded-lg border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">Удалить</button>
+                )}
                 <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">Сохранить</button>
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
               </div>
