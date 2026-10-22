@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car, CarBlock } from '@/types'
-import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Trash2, Send, Copy, Check, Download } from 'lucide-react'
 import {
   startOfMonth, endOfMonth, eachDayOfInterval, format, isSameMonth,
   addMonths, subMonths, parseISO, isWithinInterval, differenceInDays,
@@ -38,6 +38,7 @@ export default function CalendarPage() {
   const [payAmount, setPayAmount] = useState('')
   const [payStart, setPayStart] = useState('')
   const [payEnd, setPayEnd] = useState('')
+  const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -126,6 +127,72 @@ export default function CalendarPage() {
 
   const totalSalary = payrollRows.reduce((s, r) => s + r.salary, 0)
 
+  // ── Экспорт зарплаты для Telegram / Excel ──
+  const fullRows = payrollRows.filter(r => r.salary === 150)
+  const halfRows = payrollRows.filter(r => r.salary === 75)
+  const zeroRows = payrollRows.filter(r => r.salary === 0)
+
+  function payrollText() {
+    const monthLabel = format(currentMonth, 'LLLL yyyy', { locale: ru })
+    const name = (r: PayrollRow) => `${r.car.make} ${r.car.model} ${r.car.plate}`
+    const lines: string[] = [`Зарплата за ${monthLabel}`, '']
+    if (fullRows.length) {
+      lines.push(`✅ $150 × ${fullRows.length} = $${fullRows.length * 150}`)
+      fullRows.forEach(r => lines.push(`• ${name(r)}`))
+      lines.push('')
+    }
+    if (halfRows.length) {
+      lines.push(`🟡 $75 × ${halfRows.length} = $${halfRows.length * 75} (простой 14+ дней)`)
+      halfRows.forEach(r => lines.push(`• ${name(r)} — простой ${r.inactiveDays} дн.`))
+      lines.push('')
+    }
+    if (zeroRows.length) {
+      lines.push(`⛔ $0 × ${zeroRows.length} (не работали весь месяц)`)
+      zeroRows.forEach(r => lines.push(`• ${name(r)}`))
+      lines.push('')
+    }
+    lines.push(`Итого: $${totalSalary}`)
+    return lines.join('\n')
+  }
+
+  async function copyPayroll() {
+    try {
+      await navigator.clipboard.writeText(payrollText())
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      alert('Не удалось скопировать — попробуй ещё раз')
+    }
+  }
+
+  async function sharePayroll() {
+    const text = payrollText()
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try { await navigator.share({ text }) } catch { /* отменено */ }
+    } else {
+      copyPayroll()
+    }
+  }
+
+  function downloadPayrollCsv() {
+    const esc = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`
+    const rows: (string | number)[][] = [
+      ['Авто', 'Номер', 'Дней работы', 'Дней простоя', 'Зарплата, $'],
+      ...payrollRows.map(r => [`${r.car.make} ${r.car.model}`, r.car.plate, totalDays - r.inactiveDays, r.inactiveDays, r.salary]),
+      [],
+      ['Итого', '', '', '', totalSalary],
+    ]
+    const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `zarplata-${format(currentMonth, 'yyyy-MM')}.csv`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+
   return (
     <div className="p-8 space-y-8">
 
@@ -182,10 +249,30 @@ export default function CalendarPage() {
       <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
         <h2 className="text-base font-semibold mb-1">Зарплата сотрудника за {format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
         <p className="text-xs text-gray-400 mb-5">Простой &lt; 14 дней → $150 · простой ≥ 14 дней → $75 · весь месяц → $0</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="text-green-600 font-semibold">{fullRows.length} × $150</span>
+            <span className="text-yellow-600 font-semibold">{halfRows.length} × $75</span>
+            <span className="text-red-500 font-semibold">{zeroRows.length} × $0</span>
+            <span className="text-gray-900 font-bold">= ${totalSalary}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={sharePayroll} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[#229ED9] hover:bg-[#1c8cc2] text-white text-sm font-medium transition-colors">
+              <Send size={15} /> Отправить в Telegram
+            </button>
+            <button type="button" onClick={copyPayroll} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-sm font-medium transition-colors">
+              {copied ? <><Check size={15} className="text-green-600" /> Скопировано</> : <><Copy size={15} /> Копировать текст</>}
+            </button>
+            <button type="button" onClick={downloadPayrollCsv} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-sm font-medium transition-colors">
+              <Download size={15} /> Excel
+            </button>
+          </div>
+        </div>
         <table className="w-full text-sm mb-6">
           <thead>
             <tr className="text-left text-gray-400 border-b">
               <th className="pb-2 font-medium">Авто</th>
+              <th className="pb-2 font-medium text-center">Дней работы</th>
               <th className="pb-2 font-medium text-center">Дней простоя</th>
               <th className="pb-2 font-medium text-right">Зарплата</th>
             </tr>
@@ -194,6 +281,7 @@ export default function CalendarPage() {
             {payrollRows.map(({ car, inactiveDays, salary }) => (
               <tr key={car.id} className="border-b last:border-0">
                 <td className="py-2">{car.make} {car.model} <span className="ml-1 text-xs font-semibold text-gray-500">{car.plate}</span></td>
+                <td className="py-2 text-center text-gray-500">{totalDays - inactiveDays}</td>
                 <td className="py-2 text-center text-gray-500">{inactiveDays}</td>
                 <td className={`py-2 text-right font-semibold ${
                   salary === 150 ? 'text-green-600' : salary === 75 ? 'text-yellow-600' : 'text-red-500'
@@ -203,7 +291,7 @@ export default function CalendarPage() {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={2} className="pt-3 font-semibold text-gray-700">Итого</td>
+              <td colSpan={3} className="pt-3 font-semibold text-gray-700">Итого</td>
               <td className="pt-3 text-right font-bold text-gray-900">${totalSalary}</td>
             </tr>
           </tfoot>
