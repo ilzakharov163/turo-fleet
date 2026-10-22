@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { Car as CarIcon, DollarSign, Users, TrendingUp, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench, FileText } from 'lucide-react'
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay } from 'date-fns'
+import { Car as CarIcon, DollarSign, Users, TrendingUp, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench, FileText, Wallet } from 'lucide-react'
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Car } from '@/types'
 
@@ -61,6 +61,19 @@ const TONES: Record<Tone, { row: string; icon: string; badge: string }> = {
 
 const plate = (c?: CarShort | null) => (c ? `${c.make} ${c.model} ${c.plate}` : '—')
 
+// ── Прибыль (те же формулы, что в «Доходах») ──
+interface RevEntry { period: string; gross: number; repair: number; claim_items: { claim: number; supplement: number; pct: number }[] | null; other_items: { amount: number }[] | null }
+interface RevExp { period: string; salary1: number; salary2: number; items: { amount: number }[] | null }
+const num = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
+const entryNet = (e: RevEntry) =>
+  num(e.gross)
+  + (e.claim_items || []).reduce((s, c) => s + num(c.claim) + num(c.supplement) - num(c.supplement) * num(c.pct), 0)
+  - num(e.repair)
+  - (e.other_items || []).reduce((s, o) => s + num(o.amount), 0)
+const usd = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+
+interface Profit { period: string; value: number; delta: number | null }
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [cars, setCars] = useState<Car[]>([])
@@ -71,6 +84,7 @@ export default function DashboardPage() {
   const [attention, setAttention] = useState<Attention[]>([])
   const [idle, setIdle] = useState<IdleCar[]>([])
   const [recent, setRecent] = useState<RecentExpense[]>([])
+  const [profit, setProfit] = useState<Profit | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -78,6 +92,8 @@ export default function DashboardPage() {
       const now = new Date()
       const today = startOfDay(now)
       const monthStart = format(startOfMonth(now), 'yyyy-MM-dd')
+
+      loadProfit()
 
       const [carsRes, monthExpRes, recentRes, blocksRes, stickerCarsRes, stickerChRes, claimsRes] = await Promise.all([
         supabase.from('cars').select('*'),
@@ -175,6 +191,42 @@ export default function DashboardPage() {
       setRecent((recentRes.data || []) as unknown as RecentExpense[])
       setLoading(false)
     }
+
+    // ── Прибыль: последний месяц, где уже внесён Gross (текущий заполняется в конце месяца) ──
+    async function loadProfit() {
+      const supabase = createClient()
+      // Видят только те, у кого есть доступ к «Доходам» (как в Sidebar)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: prof } = await supabase.from('profiles').select('role, permissions').eq('id', user.id).single()
+      const role = (prof?.role ?? 'admin') as string
+      if (role !== 'admin' && !((prof?.permissions as string[] | null) ?? []).includes('/income')) return
+
+      const [entRes, expRes, payRes] = await Promise.all([
+        supabase.from('revenue_entries').select('period, gross, repair, claim_items, other_items'),
+        supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
+        supabase.from('revenue_payments').select('period, amount'),
+      ])
+      const entries = (entRes.data || []) as RevEntry[]
+      const exps = (expRes.data || []) as RevExp[]
+      const pays = (payRes.data || []) as { period: string; amount: number }[]
+
+      const curP = format(new Date(), 'yyyy-MM-01')
+      const period = entries.filter(e => num(e.gross) > 0 && e.period <= curP).map(e => e.period).sort().pop()
+      if (!period) return
+
+      const monthProfit = (p: string) => {
+        const net = entries.filter(e => e.period === p).reduce((s, e) => s + entryNet(e), 0)
+        const m = exps.find(x => x.period === p)
+        const exp = num(m?.salary1) + num(m?.salary2) + (m?.items || []).reduce((s, i) => s + num(i.amount), 0)
+        const pay = pays.filter(x => x.period === p).reduce((s, x) => s + num(x.amount), 0)
+        return { value: net - exp - pay, has: entries.some(e => e.period === p) || exp > 0 || pay > 0 }
+      }
+      const cur = monthProfit(period)
+      const prev = monthProfit(format(subMonths(parseISO(period), 1), 'yyyy-MM-01'))
+      setProfit({ period, value: cur.value, delta: prev.has ? cur.value - prev.value : null })
+    }
+
     load()
   }, [])
 
@@ -182,7 +234,20 @@ export default function DashboardPage() {
   const activeCount = listed.length - idle.length
   const monthName = format(new Date(), 'LLLL', { locale: ru })
 
+  const profitMonth = profit ? format(parseISO(profit.period), 'LLLL', { locale: ru }) : ''
+  const prevMonth = profit ? format(subMonths(parseISO(profit.period), 1), 'LLLL', { locale: ru }) : ''
+
   const statCards = [
+    ...(profit ? [{
+      label: `Прибыль · ${profitMonth}`,
+      value: usd(profit.value),
+      negative: profit.value < 0,
+      sub: profit.delta === null ? 'Чистая прибыль за месяц' : `${profit.delta >= 0 ? '+' : ''}${usd(profit.delta)} к ${/[ьй]$/.test(prevMonth) ? prevMonth.slice(0, -1) + 'ю' : prevMonth + 'у'}`,
+      href: '/income',
+      icon: Wallet,
+      gradient: profit.value < 0 ? 'from-[#F43F5E] to-[#E11D48]' : 'from-[#4F46E5] to-[#4338CA]',
+      wide: true,
+    }] : []),
     {
       label: 'Автомобили',
       value: cars.length,
@@ -228,17 +293,17 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5">
       {/* Stat cards — кликабельные */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${profit ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
         {statCards.map(card => (
           <Link
             key={card.label}
             href={card.href}
-            className="group bg-white rounded-[18px] p-4 sm:p-5 border border-gray-100/80 card-shadow hover:border-gray-200 transition-colors"
+            className={`group bg-white rounded-[18px] p-4 sm:p-5 border border-gray-100/80 card-shadow hover:border-gray-200 transition-colors ${'wide' in card ? 'col-span-2 xl:col-span-1' : ''}`}
           >
             <div className="flex items-start justify-between gap-2 mb-3">
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm text-gray-500 font-medium">{card.label}</p>
-                <p className="text-2xl sm:text-3xl font-bold text-gray-900 mt-1 tracking-tight tabular-nums">{loading ? '—' : card.value}</p>
+                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? '—' : card.value}</p>
               </div>
               <div className={`w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-2xl bg-gradient-to-br ${card.gradient} flex items-center justify-center shadow-md`}>
                 <card.icon size={20} className="text-white" strokeWidth={2} />
