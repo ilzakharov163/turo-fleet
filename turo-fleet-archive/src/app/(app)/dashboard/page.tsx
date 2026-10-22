@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { Car as CarIcon, DollarSign, Users, TrendingUp, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench } from 'lucide-react'
+import { Car as CarIcon, DollarSign, Users, TrendingUp, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench, FileText } from 'lucide-react'
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Car } from '@/types'
@@ -222,6 +222,7 @@ export default function DashboardPage() {
     { label: 'Отметить простой', href: '/calendar', icon: CalendarDays },
     { label: 'Новый клейм', href: '/claims', icon: ShieldAlert },
     { label: 'Наклейки', href: '/stickers', icon: Tag },
+    { label: 'Отчёты в Telegram', href: '/reports', icon: FileText },
   ]
 
   return (
