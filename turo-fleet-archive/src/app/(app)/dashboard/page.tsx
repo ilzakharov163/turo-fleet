@@ -27,11 +27,11 @@ interface RecentExpense {
 
 const DONUT_COLORS = ['#22C55E', '#F59E0B', '#EF4444', '#E5E7EB']
 
-function calcSalary(activeDays: number): number {
-  const weeks = activeDays / 7
-  if (weeks >= 3) return 150
-  if (weeks >= 2) return 75
-  return 0
+// Как в календаре: простой < 14 дн. → $150, 14+ → $75, весь месяц → $0
+function calcSalary(inactiveDays: number, totalDays: number): number {
+  if (inactiveDays >= totalDays) return 0
+  if (inactiveDays >= 14) return 75
+  return 150
 }
 
 export default function DashboardPage() {
@@ -51,7 +51,7 @@ export default function DashboardPage() {
         supabase.from('expenses').select('amount').gte('date', monthStart),
         supabase.from('expenses').select('id, title, amount, date, car:cars(make,model,plate)').order('date', { ascending: false }).limit(5),
         supabase.from('car_blocks').select('car_id, start_date, end_date'),
-        supabase.from('salary_payments').select('id, amount, period, created_at').gte('created_at', monthStart).order('created_at', { ascending: false }),
+        supabase.from('salary_payments').select('id, amount, period, created_at').eq('owner_group', 'main').gte('created_at', monthStart).order('created_at', { ascending: false }),
       ])
 
       const cars: Car[] = carsRes.data || []
@@ -65,15 +65,13 @@ export default function DashboardPage() {
 
       let totalSalary = 0
       for (const car of cars.filter(c => !c.delisted)) {
-        const activeDays = daysInMonth.filter(day => {
-          return !blocks.some(b => {
-            if (b.car_id !== car.id) return false
-            const bStart = parseISO(b.start_date)
-            const bEnd = b.end_date ? parseISO(b.end_date) : now
-            return isWithinInterval(day, { start: bStart, end: bEnd })
-          })
-        }).length
-        totalSalary += calcSalary(activeDays)
+        const inactiveDays = daysInMonth.filter(day => blocks.some(b => {
+          if (b.car_id !== car.id) return false
+          const bStart = parseISO(b.start_date)
+          const bEnd = b.end_date ? parseISO(b.end_date) : new Date(9999, 0)
+          return isWithinInterval(day, { start: bStart, end: bEnd })
+        })).length
+        totalSalary += calcSalary(inactiveDays, daysInMonth.length)
       }
 
       setStats({
@@ -108,6 +106,14 @@ export default function DashboardPage() {
       shadow: 'shadow-blue-200',
     },
     {
+      label: 'Активных автомобилей',
+      value: stats.active,
+      sub: `Неактивных: ${stats.inactive}`,
+      icon: TrendingUp,
+      gradient: 'from-[#F59E0B] to-[#D97706]',
+      shadow: 'shadow-amber-200',
+    },
+    {
       label: 'Расходы за месяц',
       value: `$${stats.monthExpenses.toLocaleString('ru-RU')}`,
       sub: 'Текущий месяц',
@@ -116,20 +122,12 @@ export default function DashboardPage() {
       shadow: 'shadow-purple-200',
     },
     {
-      label: 'Зарплата операторов',
+      label: 'Зарплата работника',
       value: `$${stats.operatorSalary}`,
       sub: 'Текущий месяц',
       icon: Users,
       gradient: 'from-[#10B981] to-[#059669]',
       shadow: 'shadow-emerald-200',
-    },
-    {
-      label: 'Активных',
-      value: stats.active,
-      sub: `Неактивных: ${stats.inactive}`,
-      icon: TrendingUp,
-      gradient: 'from-[#F59E0B] to-[#D97706]',
-      shadow: 'shadow-amber-200',
     },
   ]
 
@@ -211,7 +209,7 @@ export default function DashboardPage() {
         {/* Salary breakdown */}
         <div className="bg-white rounded-[18px] p-6 border border-gray-100/80 card-shadow">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-gray-900">Зарплата операторов</h2>
+            <h2 className="text-base font-bold text-gray-900">Зарплата работника</h2>
             <Link href="/calendar" className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">
               Календарь <ArrowRight size={14} />
             </Link>
