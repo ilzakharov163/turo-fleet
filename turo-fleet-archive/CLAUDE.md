@@ -22,7 +22,7 @@
 - **income** — «Доходы» (см. ниже, самый большой раздел).
 - **claims** — клеймы (`claims`: status waiting/in_repair/done, opened_date, completed_date, initial_payment_received, supplement_paid, notes). Завершённые показывают только машину, номер и дату завершения.
 - **stickers** — наклейки (`sticker_cars`, `sticker_changes` с old_plate/new_plate). Замена каждые 45 дней, жёлтый за 7 дней. При замене вводится новый номер → обновляется `cars.plate` везде.
-- **team** — пользователи через RPC `list_team()`, `update_team_member(p_id, p_role, p_permissions, p_full_name)`. Роли admin/partner/employee, `profiles.permissions text[]` — список разделов. Новый пользователь = employee с доступом только к `/expenses`. Ограничение доступа — только на уровне UI (Sidebar), RLS даёт полный доступ авторизованным.
+- **team** — пользователи через RPC `list_team()`, `update_team_member(p_id, p_role, p_permissions, p_full_name)`. Роли admin/partner/employee, `profiles.permissions text[]` — список разделов. Новый пользователь = employee с доступом только к `/expenses`. Пользователей создаёт админ в кабинете Supabase (старые /api/invite и /join удалены 22.10.2026 — были открыты без проверки). Сейчас ограничение доступа — только в UI (Sidebar); правила по разделам в базе подготовлены в `supabase-section-access.sql`, но ещё НЕ применены (ждут подтверждения владельца).
 - **reports** — готовые сообщения для Telegram (navigator.share → иначе копирование) + Excel (CSV с BOM): Автопарк сегодня, Клеймы (формат «Initial получен: да/нет», «Supplement получен: да/нет»), Зарплата работника, Доходы (с платежами). Есть «Все отчёты одним сообщением».
 
 ## Правило зарплаты работника (везде одинаково)
@@ -53,6 +53,8 @@
 **Исторические заметки:** в августе добавлен Supplement $6,538 (20%) по Bmw X1 у Анастасии (в трекере был скрыт). Записи X1 на аккаунте Ильи не переносить. В августе/сентябре платежи записаны строкой «пейменты» в расходах — отдельные платежи начинаются с октября 2026.
 
 **Карточка «Прибыль» на Дашборде:** чистая прибыль последнего месяца, где уже внесён Gross (текущий месяц заполняется в конце, без Gross он бы показал ложный минус), и разница с предыдущим месяцем. Формулы те же, что в «Доходах». Видна только admin или тем, у кого в permissions есть `/income`. Клик → /income.
+
+**Приложение на iPhone:** PWA — `src/app/manifest.ts`, `src/app/apple-icon.png`, `public/icon-192/512.png`. Ставится из Safari: Поделиться → На экран «Домой».
 
 ## Как работать с проектом
 - Перед изменением схемы — посмотреть текущие таблицы; RLS-политика по образцу: `"auth users full access" for all to authenticated using (true) with check (true)`.

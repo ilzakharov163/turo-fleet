@@ -7,11 +7,13 @@ const inter = Inter({ subsets: ["latin", "cyrillic"] });
 export const metadata: Metadata = {
   title: "Fleet Manager — Turo",
   description: "Управление автопарком Turo",
+  appleWebApp: { capable: true, title: "Fleet", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  themeColor: '#ffffff',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -283,11 +283,12 @@ export default function ReportsPage() {
       subtitle: `$${salaryTotal} · ${full.length} × $150 · ${half.length} × $75${zero.length ? ` · ${zero.length} × $0` : ''}`,
       text: salaryText, csv: salaryCsv, file: `zarplata-${format(month, 'yyyy-MM')}.csv`,
     },
-    {
+    // Без доступа к «Доходам» база не отдаёт аккаунты — отчёт не показываем
+    ...(rev.accs.length ? [{
       key: 'income', title: 'Доходы', icon: Wallet, color: 'from-[#8B5CF6] to-[#6D28D9]',
       subtitle: `прибыль ${usd(revProfit)} · gross ${usd(revGross)}`,
       text: incomeText, csv: incomeCsv, file: `dohody-${format(month, 'yyyy-MM')}.csv`,
-    },
+    }] : []),
   ]
 
   const allText = reports.map(r => r.text).join('\n\n— — —\n\n')

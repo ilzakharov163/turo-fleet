@@ -28,7 +28,7 @@ export async function proxy(request: NextRequest) {
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
-    if (!user && pathname !== '/login' && !pathname.startsWith('/join') && !pathname.startsWith('/api')) {
+    if (!user && pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
@@ -36,7 +36,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
   } catch {
-    if (pathname !== '/login' && !pathname.startsWith('/join') && !pathname.startsWith('/api')) {
+    if (pathname !== '/login') {
       return NextResponse.redirect(new URL('/login', request.url))
     }
   }
@@ -45,5 +45,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.png|.*\\.svg|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|manifest.webmanifest|.*\\.png|.*\\.svg|.*\\.jpg|.*\\.jpeg|.*\\.gif|.*\\.ico).*)'],
 }
