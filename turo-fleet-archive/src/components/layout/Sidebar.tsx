@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert, Tag } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
@@ -20,6 +20,7 @@ const nav = [
   { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
   { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
   { href: '/log', icon: ClipboardList, label: 'История', adminOnly: true },
+  { href: '/reports', icon: FileText, label: 'Отчёты', adminOnly: true },
 ]
 
 export default function Sidebar() {
