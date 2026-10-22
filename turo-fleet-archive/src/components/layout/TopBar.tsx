@@ -11,7 +11,6 @@ const pageTitles: Record<string, string> = {
   '/calendar': 'Календарь',
   '/expenses': 'Расходы',
   '/analytics': 'Аналитика',
-  '/maintenance': 'Техобслуживание',
   '/claims': 'Клеймы и ремонт',
   '/stickers': 'Наклейки',
   '/reports': 'Отчёты',
@@ -23,6 +22,9 @@ const pageTitles: Record<string, string> = {
 const roleLabels: Record<string, string> = {
   owner: 'Овнер',
   operator: 'Оператор',
+  admin: 'Администратор',
+  partner: 'Партнёр',
+  employee: 'Сотрудник',
 }
 
 export default function TopBar({ pathname }: { pathname: string }) {
@@ -50,8 +52,12 @@ export default function TopBar({ pathname }: { pathname: string }) {
         setInitials(email.slice(0, 2).toUpperCase())
       }
 
-      const { data: member } = await supabase.from('team_members').select('role').eq('email', email).single()
-      if (member?.role) setRole(member.role)
+      const { data: profile } = await supabase.from('profiles').select('role, full_name').eq('id', data.user.id).single()
+      if (profile?.role) setRole(profile.role)
+      if (profile?.full_name) {
+        setDisplayName(profile.full_name)
+        setInitials(profile.full_name.trim().split(' ').map((p: string) => p[0]).join('').slice(0, 2).toUpperCase())
+      }
     }).catch(() => {})
   }, [])
 
