@@ -30,6 +30,7 @@ interface Entry {
 }
 interface MonthExp { period: string; salary1: number; salary2: number; items: OtherItem[] }
 interface Block { car_id: string; start_date: string; end_date: string | null }
+interface Payment { id: string; period: string; grp: string; day: number | null; name: string; amount: number; paid: boolean; sort: number }
 type Cell = string | number
 
 // ── Расчёты (та же логика, что в TuroTracker) ──
@@ -413,6 +414,100 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
   )
 }
 
+// ── Текстовая ячейка: сохраняется при выходе из поля или Enter ──
+function EditCell({ value, onCommit, numeric = false, placeholder = '', className = '' }: { value: string; onCommit: (v: string) => void; numeric?: boolean; placeholder?: string; className?: string }) {
+  const [v, setV] = useState(value)
+  const [f, setF] = useState(false)
+  return (
+    <input value={f ? v : value} placeholder={placeholder} inputMode={numeric ? 'decimal' : undefined}
+      onFocus={e => { setV(value); setF(true); const t = e.target; requestAnimationFrame(() => t.select()) }}
+      onBlur={() => { setF(false); if (v.trim() !== value) onCommit(v.trim()) }}
+      onChange={e => setV(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setV(value); e.currentTarget.blur() } }}
+      className={`w-full min-w-0 bg-transparent px-3 py-2.5 text-sm outline-none placeholder:text-gray-300 hover:bg-indigo-50 focus:relative focus:z-10 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${className}`} />
+  )
+}
+
+// ── Платежи (ежемесячные) ──
+function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, onDelete, onCopyPrev }: {
+  period: string; items: Payment[]; prevCount: number; prevLabel: string
+  onAdd: (grp: string) => void; onUpdate: (id: string, patch: Partial<Payment>) => void; onDelete: (id: string) => void; onCopyPrev: () => void
+}) {
+  const [newGroup, setNewGroup] = useState('')
+  const groups: string[] = []
+  ;[...items].sort((a, b) => a.sort - b.sort).forEach(p => { if (!groups.includes(p.grp)) groups.push(p.grp) })
+  const total = items.reduce((s, p) => s + n(p.amount), 0)
+  const paid = items.filter(p => p.paid).reduce((s, p) => s + n(p.amount), 0)
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-sm text-gray-500">Платежи · {monthName(period)}</p>
+            <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums mt-1">{money(total)}</p>
+            <p className="text-xs text-gray-400 mt-1">{items.length} платежей · оплачено {money(paid)} · осталось {money(total - paid)}</p>
+          </div>
+          <form onSubmit={e => { e.preventDefault(); if (newGroup.trim()) { onAdd(newGroup.trim()); setNewGroup('') } }} className="flex gap-2">
+            <input id="pay-new-group" value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="Новая группа (например, Карам)" className="w-56 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button type="submit" className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={15} /> Группа</button>
+          </form>
+        </div>
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${total ? paid / total * 100 : 0}%` }} /></div>
+      </div>
+
+      {items.length === 0 && (
+        <div className="bg-white rounded-[18px] border border-dashed border-gray-200 p-6 text-center">
+          <p className="text-sm text-gray-500">В этом месяце платежей пока нет.</p>
+          {prevCount > 0 && <button onClick={onCopyPrev} className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Copy size={15} /> Перенести {prevCount} платежей из {prevLabel}</button>}
+        </div>
+      )}
+
+      {groups.map(g => {
+        const rows = items.filter(p => p.grp === g).sort((a, b) => (n(a.day) - n(b.day)) || (a.sort - b.sort))
+        const sub = rows.reduce((s, p) => s + n(p.amount), 0)
+        return (
+          <div key={g} className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3">
+              <h3 className="text-base font-bold text-gray-900">{g}</h3>
+              <span className="text-sm font-semibold tabular-nums text-gray-900">{money(sub)}</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] table-fixed border-collapse text-sm">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wide text-gray-500">
+                    <th className="w-[80px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-left font-semibold">Число</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-left font-semibold">Платёж</th>
+                    <th className="w-[130px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-right font-semibold">Сумма</th>
+                    <th className="w-[100px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-center font-semibold">Оплачен</th>
+                    <th className="w-[48px] bg-gray-100 border-y border-gray-200" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(p => (
+                    <tr key={p.id} className={`group ${p.paid ? 'bg-emerald-50/40' : ''}`}>
+                      <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.day ? String(p.day) : ''} numeric placeholder="—" onCommit={v => onUpdate(p.id, { day: v ? Math.min(31, Math.max(1, Math.round(n(v)))) : null })} /></td>
+                      <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.name} placeholder="Название" onCommit={v => onUpdate(p.id, { name: v })} /></td>
+                      <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.amount ? String(p.amount) : ''} numeric placeholder="0" className="text-right font-semibold tabular-nums" onCommit={v => onUpdate(p.id, { amount: round2(n(v.replace(',', '.'))) })} /></td>
+                      <td className="border-b border-r border-gray-200 text-center">
+                        <button onClick={() => onUpdate(p.id, { paid: !p.paid })} className={`inline-flex h-6 min-w-[52px] items-center justify-center rounded-full px-2 text-xs font-semibold ${p.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{p.paid ? 'да' : 'нет'}</button>
+                      </td>
+                      <td className="border-b border-gray-200 text-center">
+                        <button onClick={() => { if (confirm(`Удалить платёж «${p.name || 'без названия'}»?`)) onDelete(p.id) }} className="p-1.5 text-gray-300 hover:text-red-500" aria-label="Удалить платёж"><Trash2 size={15} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button onClick={() => onAdd(g)} className="w-full px-4 py-2.5 text-left text-sm font-medium text-indigo-600 hover:bg-indigo-50"><Plus size={14} className="inline -mt-0.5" /> Добавить платёж</button>
+          </div>
+        )
+      })}
+      <p className="text-xs text-gray-400">Нажмите на ячейку, чтобы изменить — сохраняется само. Платежи входят в расходы месяца и вычитаются из чистой прибыли. В новом месяце можно перенести список из прошлого одной кнопкой.</p>
+    </div>
+  )
+}
+
 // ── Ячейка как в Excel: Enter — вниз, ↑/↓ — по строкам, сохраняется сама ──
 function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '', strong = false, boxed = false }: {
   grid: string; row: number; col: number; value: number; onCommit: (v: number) => void
@@ -456,6 +551,7 @@ export default function IncomePage() {
   const [rcars, setRcars] = useState<RCar[]>([])
   const [entries, setEntries] = useState<Entry[]>([])
   const [monthExp, setMonthExp] = useState<MonthExp[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
   const [fleet, setFleet] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [archiveCount, setArchiveCount] = useState(0)
@@ -482,6 +578,7 @@ export default function IncomePage() {
       supabase.from('revenue_cars').select('*, car:cars(make,model,plate)').order('sort'),
       supabase.from('revenue_entries').select('id, revenue_car_id, period, gross, repair, claim_items, other_items'),
       supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
+      supabase.from('revenue_payments').select('*').order('sort'),
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date'),
     ])
@@ -490,10 +587,11 @@ export default function IncomePage() {
       await new Promise(r => setTimeout(r, 700))
       res = await fetchAll()
     }
-    const [a, c, e, m, f, b] = res
+    const [a, c, e, m, pay, f, b] = res
     setAccounts((a.data as Account[]) || [])
     setRcars((c.data as RCar[]) || [])
     setEntries(((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair) })))
+    setPayments(((pay.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) })))
     setMonthExp(((m.data as MonthExp[]) || []).map(x => ({ ...x, salary1: n(x.salary1), salary2: n(x.salary2) })))
     setFleet((f.data as Car[]) || [])
     setBlocks((b.data as Block[]) || [])
@@ -529,10 +627,11 @@ export default function IncomePage() {
     const accs = accountsIn(p).map(a => ({ a, t: accTotals(a.key, p), cars: carsIn(a.key, p).length }))
     const total = accs.reduce((t, x) => add(t, x.t), zero())
     const exp = monthExp.find(m => m.period === p) || null
+    const pays = payments.filter(x => x.period === p).reduce((s, x) => s + n(x.amount), 0)
     const expenses = expTotal(exp)
-    const has = entries.some(e => e.period === p) || expenses > 0
-    return { accs, total, exp, expenses, profit: total.net - expenses, has }
-  }, [accountsIn, accTotals, carsIn, monthExp, entries])
+    const has = entries.some(e => e.period === p) || expenses > 0 || pays > 0
+    return { accs, total, exp, expenses, pays, profit: total.net - expenses - pays, has }
+  }, [accountsIn, accTotals, carsIn, monthExp, entries, payments])
 
   // Месяцы для ленты: от первого месяца с данными до текущего
   const months = useMemo(() => {
@@ -567,7 +666,7 @@ export default function IncomePage() {
 
   useEffect(() => {
     if (loading) return
-    if (view !== 'summary' && view !== 'expenses' && view !== 'gross' && !sum.accs.some(x => x.a.key === view)) setView('summary')
+    if (view !== 'summary' && view !== 'expenses' && view !== 'gross' && view !== 'payments' && !sum.accs.some(x => x.a.key === view)) setView('summary')
   }, [loading, view, sum.accs])
 
   // Все машины месяца — для «лучших» и «в минусе»
@@ -608,6 +707,33 @@ export default function IncomePage() {
       items[0] = { ...items[0], [field]: val }
       return { ...e, claim_items: items.filter(c => c.claim || c.supplement) }
     })
+  }
+
+  // ── Платежи ──
+  async function addPayment(grp: string) {
+    const sort = Math.max(0, ...payments.filter(x => x.period === period).map(x => x.sort)) + 1
+    const { data, error } = await createClient().from('revenue_payments').insert({ period, grp, name: '', amount: 0, sort }).select('*').single()
+    if (error) { alert(error.message); return }
+    setPayments(prev => [...prev, { ...(data as Payment), amount: 0 }])
+  }
+  async function updatePayment(id: string, patch: Partial<Payment>) {
+    setPayments(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)))
+    const { error } = await createClient().from('revenue_payments').update(patch).eq('id', id)
+    if (error) { alert(`Не сохранилось: ${error.message}`); load() }
+  }
+  async function deletePayment(id: string) {
+    setPayments(prev => prev.filter(x => x.id !== id))
+    const { error } = await createClient().from('revenue_payments').delete().eq('id', id)
+    if (error) { alert(error.message); load() }
+  }
+  async function copyPrevPayments() {
+    const prev = payments.filter(x => x.period === pKey(subMonths(month, 1)))
+    if (!prev.length) return
+    const rows = prev.map(x => ({ period, grp: x.grp, day: x.day, name: x.name, amount: x.amount, sort: x.sort, paid: false }))
+    const { data, error } = await createClient().from('revenue_payments').insert(rows).select('*')
+    if (error) { alert(error.message); return }
+    setPayments(p => [...p, ...((data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))])
+    await log('create', 'revenue_payments', period, { copied_from: pKey(subMonths(month, 1)), count: rows.length })
   }
 
   // ── Сохранение ──
@@ -667,6 +793,7 @@ export default function IncomePage() {
     `Ремонт и прочее: −${abs(sum.total.repair + sum.total.other)}`,
     `Итого по аккаунтам: ${money(sum.total.net)}`,
     `Расходы компании: −${abs(sum.expenses)}`,
+    `Платежи: −${abs(sum.pays)}`,
     '',
     `${sum.profit >= 0 ? '✅' : '🔻'} Чистая прибыль: ${money(sum.profit)}`,
   ].join('\n')
@@ -695,14 +822,16 @@ export default function IncomePage() {
   function exportMonth() {
     const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Расходы компании'], ['Сотрудник: расходы', n(sum.exp?.salary1)], ['Сотрудник: зарплата', n(sum.exp?.salary2)]]
     for (const i of sum.exp?.items || []) rows.push([i.desc, n(i.amount)])
-    rows.push([], ['Итого по аккаунтам', round2(sum.total.net)], ['Расходы компании', round2(sum.expenses)], ['Чистая прибыль', round2(sum.profit)])
+    rows.push([], ['Платежи'])
+    for (const x of payments.filter(x => x.period === period)) rows.push([`${x.grp}: ${x.name}`, n(x.amount), x.day ? `${x.day} число` : '', x.paid ? 'оплачен' : 'не оплачен'])
+    rows.push([], ['Итого по аккаунтам', round2(sum.total.net)], ['Расходы компании', round2(sum.expenses)], ['Платежи', round2(sum.pays)], ['Чистая прибыль', round2(sum.profit)])
     downloadFile(toCsv(rows), `dohody-${format(month, 'yyyy-MM')}.csv`, 'text/csv;charset=utf-8')
     setExportOpen(false)
   }
   function exportAll() {
     const ms = monthStats.filter(s => s.has)
-    const rows: Cell[][] = [['Сводка по месяцам'], ['Месяц', 'Gross', 'Итого по аккаунтам', 'Расходы компании', 'Чистая прибыль'],
-      ...ms.map(s => [monthName(s.p), round2(s.total.gross), round2(s.total.net), round2(s.expenses), round2(s.profit)] as Cell[]),
+    const rows: Cell[][] = [['Сводка по месяцам'], ['Месяц', 'Gross', 'Итого по аккаунтам', 'Расходы компании', 'Платежи', 'Чистая прибыль'],
+      ...ms.map(s => [monthName(s.p), round2(s.total.gross), round2(s.total.net), round2(s.expenses), round2(s.pays), round2(s.profit)] as Cell[]),
       [], ['Машины по месяцам'], carHeader]
     ms.forEach(s => rows.push(...carRows(s.p)))
     rows.push([], ['Расходы компании по месяцам'], ['Месяц', 'Статья', 'Сумма'])
@@ -710,23 +839,25 @@ export default function IncomePage() {
       if (n(s.exp?.salary1)) rows.push([monthName(s.p), 'Сотрудник: расходы', n(s.exp?.salary1)])
       if (n(s.exp?.salary2)) rows.push([monthName(s.p), 'Сотрудник: зарплата', n(s.exp?.salary2)])
       for (const i of s.exp?.items || []) rows.push([monthName(s.p), i.desc, n(i.amount)])
+      for (const x of payments.filter(x => x.period === s.p)) rows.push([monthName(s.p), `Платёж · ${x.grp}: ${x.name}`, n(x.amount)])
     })
     downloadFile(toCsv(rows), `dohody-vse-mesyacy-${format(new Date(), 'yyyy-MM-dd')}.csv`, 'text/csv;charset=utf-8')
     setExportOpen(false)
   }
   async function exportBackup() {
     const supabase = createClient()
-    const [a, c, e, m, t] = await Promise.all([
+    const [a, c, e, m, t, pz] = await Promise.all([
       supabase.from('revenue_accounts').select('*'),
       supabase.from('revenue_cars').select('*'),
       supabase.from('revenue_entries').select('*'),
       supabase.from('revenue_month_expenses').select('*'),
       supabase.from('tracker_archive').select('key, value, imported_at'),
+      supabase.from('revenue_payments').select('*'),
     ])
     const backup = {
       exported_at: new Date().toISOString(),
       note: 'Полная копия раздела «Доходы» + сырой архив старого TuroTracker',
-      revenue_accounts: a.data, revenue_cars: c.data, revenue_entries: e.data, revenue_month_expenses: m.data, tracker_archive: t.data,
+      revenue_accounts: a.data, revenue_cars: c.data, revenue_entries: e.data, revenue_month_expenses: m.data, revenue_payments: pz.data, tracker_archive: t.data,
     }
     downloadFile(JSON.stringify(backup, null, 2), `dohody-backup-${format(new Date(), 'yyyy-MM-dd')}.json`, 'application/json')
     setExportOpen(false)
@@ -831,6 +962,10 @@ export default function IncomePage() {
             <Receipt size={14} /> Расходы
             {!loading && <span className={`text-xs tabular-nums ${view === 'expenses' ? 'text-white/75' : 'text-gray-400'}`}>{moneyShort(sum.expenses)}</span>}
           </button>
+          <button onClick={() => setView('payments')} className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'payments' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
+            <Wallet size={14} /> Платежи
+            {!loading && <span className={`text-xs tabular-nums ${view === 'payments' ? 'text-white/75' : 'text-gray-400'}`}>{moneyShort(sum.pays)}</span>}
+          </button>
         </div>
       </div>
 
@@ -854,13 +989,14 @@ export default function IncomePage() {
                   )}
                 </div>
               </div>
-              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-5 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-6 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
                 {[
                   { label: 'Gross', value: money(sum.total.gross), cls: 'text-gray-900' },
                   { label: 'Клеймы', value: `+${abs(sum.total.claim + sum.total.supp)}`, cls: 'text-gray-900' },
                   { label: 'Вычет Turo', value: `−${abs(sum.total.ded)}`, cls: 'text-gray-500' },
                   { label: 'Ремонт и пр.', value: `−${abs(sum.total.repair + sum.total.other)}`, cls: 'text-gray-500' },
                   { label: 'Расходы', value: `−${abs(sum.expenses)}`, cls: 'text-gray-500', go: 'expenses' },
+                  { label: 'Платежи', value: `−${abs(sum.pays)}`, cls: 'text-gray-500', go: 'payments' },
                 ].map(st => (
                   <button key={st.label} onClick={() => st.go && setView(st.go)} disabled={!st.go} className={`text-left ${st.go ? 'hover:opacity-70' : 'cursor-default'}`}>
                     <span className="block text-[11px] uppercase tracking-wide text-gray-400">{st.label}</span>
@@ -940,6 +1076,12 @@ export default function IncomePage() {
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Расходы компании</td>
                     <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">сотрудник {money(n(sum.exp?.salary1) + n(sum.exp?.salary2))} · {(sum.exp?.items || []).length} поз.</td>
                     <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.expenses)}</td>
+                    <td className="border-b border-gray-200" />
+                  </tr>
+                  <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('payments')}>
+                    <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Платежи</td>
+                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{payments.filter(x => x.period === period).length} платежей · машины, страховки, GPS</td>
+                    <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.pays)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>
                   <tr className={profitUp ? 'bg-emerald-50' : 'bg-red-50'}>
@@ -1032,6 +1174,10 @@ export default function IncomePage() {
             </p>
           )}
         </>
+      ) : view === 'payments' ? (
+        <PaymentsPanel period={period} items={payments.filter(x => x.period === period)}
+          prevCount={payments.filter(x => x.period === pKey(subMonths(month, 1))).length} prevLabel={monthName(pKey(subMonths(month, 1)), 'LLLL').toLowerCase()}
+          onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment} onCopyPrev={copyPrevPayments} />
       ) : view === 'expenses' ? (
         <ExpensesPanel key={period} period={period} payroll={payroll} onSave={saveExpenses}
           value={sum.exp || { period, salary1: 0, salary2: 0, items: [] }} />
