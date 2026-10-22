@@ -505,8 +505,9 @@ export default function IncomePage() {
   const monthStats = useMemo(() => months.map(p => ({ p, ...monthSummary(p) })), [months, monthSummary])
 
   useEffect(() => {
-    const el = stripRef.current?.querySelector('[data-active="true"]') as HTMLElement | null
-    el?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+    const strip = stripRef.current
+    const el = strip?.querySelector('[data-active="true"]') as HTMLElement | null
+    if (strip && el) strip.scrollTo({ left: el.offsetLeft - strip.offsetLeft - (strip.clientWidth - el.offsetWidth) / 2, behavior: 'smooth' })
   }, [period, loading])
 
   const sum = monthSummary(period)
@@ -686,7 +687,7 @@ export default function IncomePage() {
   const profitUp = sum.profit >= 0
 
   return (
-    <div className="space-y-5 pb-6">
+    <div className="space-y-5 pb-6 min-w-0">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -720,7 +721,7 @@ export default function IncomePage() {
       {/* Лента месяцев */}
       <div className="flex items-center gap-2">
         <button onClick={() => setMonth(m => subMonths(m, 1))} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 flex-shrink-0" aria-label="Предыдущий месяц"><ChevronLeft size={16} /></button>
-        <div ref={stripRef} className="flex-1 flex gap-2 overflow-x-auto py-0.5" style={{ scrollbarWidth: 'none' }}>
+        <div ref={stripRef} className="flex-1 min-w-0 flex gap-2 overflow-x-auto py-0.5" style={{ scrollbarWidth: 'none' }}>
           {monthStats.map(s => {
             const active = s.p === period
             return (
