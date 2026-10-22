@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Wrench, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
@@ -15,7 +15,6 @@ const nav = [
   { href: '/calendar', icon: Calendar, label: 'Календарь', adminOnly: true },
   { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
   { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
-  { href: '/maintenance', icon: Wrench, label: 'Тех.обсл', adminOnly: true },
   { href: '/stickers', icon: Tag, label: 'Наклейки', adminOnly: true },
   { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
   { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
@@ -27,18 +26,22 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { dark, toggle } = useTheme()
-  const [role, setRole] = useState<'admin' | 'employee' | null>(null)
+  const [access, setAccess] = useState<{ role: string; perms: string[] } | null>(null)
 
   useEffect(() => {
     async function loadRole() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-      const r = (data?.role ?? 'admin') as 'admin' | 'employee'
-      setRole(r)
-      if (r === 'employee' && pathname !== '/expenses') {
-        router.replace('/expenses')
+      const { data } = await supabase.from('profiles').select('role, permissions').eq('id', user.id).single()
+      const role = (data?.role ?? 'admin') as string
+      let perms: string[] = (data?.permissions as string[] | null) ?? []
+      if (role !== 'admin' && perms.length === 0) perms = ['/expenses']
+      setAccess({ role, perms })
+      // Сотрудник/партнёр видит только разрешённые разделы
+      if (role !== 'admin') {
+        const allowed = pathname === '/settings' || perms.some(p => pathname === p || pathname.startsWith(p + '/'))
+        if (!allowed) router.replace(perms[0] || '/settings')
       }
     }
     loadRole()
@@ -50,7 +53,7 @@ export default function Sidebar() {
     router.push('/login')
   }
 
-  const visibleNav = role === 'employee' ? nav.filter(n => !n.adminOnly) : nav
+  const visibleNav = !access || access.role === 'admin' ? nav : nav.filter(n => access.perms.includes(n.href))
 
   return (
     <>
