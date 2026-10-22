@@ -54,6 +54,11 @@ html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba
 /* Scrollbar */
 html.dark ::-webkit-scrollbar-thumb { background: #1E2845; }
 
+/* Как в приложении: без пружинящего отскока и сдвига страницы пальцем */
+html, body {
+  overscroll-behavior: none;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

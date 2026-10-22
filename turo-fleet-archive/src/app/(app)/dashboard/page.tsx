@@ -72,7 +72,7 @@ const entryNet = (e: RevEntry) =>
   - (e.other_items || []).reduce((s, o) => s + num(o.amount), 0)
 const usd = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
-interface Profit { period: string; value: number; delta: number | null }
+interface Profit { period: string; value: number; delta: number | null; hasGross: boolean }
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
@@ -192,7 +192,7 @@ export default function DashboardPage() {
       setLoading(false)
     }
 
-    // ── Прибыль: последний месяц, где уже внесён Gross (текущий заполняется в конце месяца) ──
+    // ── Прибыль за текущий месяц ──
     async function loadProfit() {
       const supabase = createClient()
       // Видят только те, у кого есть доступ к «Доходам» (как в Sidebar)
@@ -211,9 +211,7 @@ export default function DashboardPage() {
       const exps = (expRes.data || []) as RevExp[]
       const pays = (payRes.data || []) as { period: string; amount: number }[]
 
-      const curP = format(new Date(), 'yyyy-MM-01')
-      const period = entries.filter(e => num(e.gross) > 0 && e.period <= curP).map(e => e.period).sort().pop()
-      if (!period) return
+      const period = format(new Date(), 'yyyy-MM-01')
 
       const monthProfit = (p: string) => {
         const net = entries.filter(e => e.period === p).reduce((s, e) => s + entryNet(e), 0)
@@ -224,7 +222,8 @@ export default function DashboardPage() {
       }
       const cur = monthProfit(period)
       const prev = monthProfit(format(subMonths(parseISO(period), 1), 'yyyy-MM-01'))
-      setProfit({ period, value: cur.value, delta: prev.has ? cur.value - prev.value : null })
+      const hasGross = entries.some(e => e.period === period && num(e.gross) > 0)
+      setProfit({ period, value: cur.value, delta: prev.has ? cur.value - prev.value : null, hasGross })
     }
 
     load()
@@ -242,7 +241,7 @@ export default function DashboardPage() {
       label: `Прибыль · ${profitMonth}`,
       value: usd(profit.value),
       negative: profit.value < 0,
-      sub: profit.delta === null ? 'Чистая прибыль за месяц' : `${profit.delta >= 0 ? '+' : ''}${usd(profit.delta)} к ${/[ьй]$/.test(prevMonth) ? prevMonth.slice(0, -1) + 'ю' : prevMonth + 'у'}`,
+      sub: !profit.hasGross ? 'Gross за месяц ещё не внесён' : profit.delta === null ? 'Чистая прибыль за месяц' : `${profit.delta >= 0 ? '+' : ''}${usd(profit.delta)} к ${/[ьй]$/.test(prevMonth) ? prevMonth.slice(0, -1) + 'ю' : prevMonth + 'у'}`,
       href: '/income',
       icon: Wallet,
       gradient: profit.value < 0 ? 'from-[#F43F5E] to-[#E11D48]' : 'from-[#4F46E5] to-[#4338CA]',

@@ -247,19 +247,19 @@ export default function ExpensesPage() {
   }
 
   return (
-    <div className="p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Расходы</h1>
+    <div className="sm:p-8">
+      <div className="flex items-center justify-end sm:justify-between gap-3 mb-5 sm:mb-6">
+        <h1 className="hidden sm:block text-xl font-bold text-gray-900">Расходы</h1>
         <button
           onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
         >
-          <Plus size={16} /> Добавить расход
+          <Plus size={16} /> <span className="hidden sm:inline">Добавить расход</span><span className="sm:hidden">Добавить</span>
         </button>
       </div>
 
       {/* Month tabs */}
-      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1">
+      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
         <button
           onClick={() => setFilterMonth('all')}
           className={`px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${filterMonth === 'all' ? 'bg-[#4F46E5] text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
@@ -303,7 +303,7 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 sm:mb-6">
         <Select
           value={filterCar}
           onChange={setFilterCar}
@@ -316,6 +316,49 @@ export default function ExpensesPage() {
 
       {loading ? <div className="text-gray-400">Загрузка...</div> : (
         <div className="bg-white rounded-[18px] overflow-hidden card-shadow border border-gray-100/80">
+          {/* Телефон — карточки */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {[...filtered.filter(e => e.paid), ...filtered.filter(e => !e.paid)].map((exp, idx, arr) => (
+              <React.Fragment key={exp.id}>
+                {!exp.paid && idx > 0 && arr[idx - 1].paid && (
+                  <div className="px-4 py-2 text-xs font-semibold text-rose-400 uppercase tracking-wider bg-rose-50/40">Не оплачено</div>
+                )}
+                <div className={`flex gap-3 px-4 py-3 ${selected.has(exp.id) ? 'bg-indigo-50/40' : ''}`}>
+                  <input type="checkbox" checked={selected.has(exp.id)} onChange={() => toggleSelect(exp.id)} className="mt-1 w-5 h-5 flex-shrink-0 rounded border-gray-300 accent-[#4F46E5]" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium text-gray-900 min-w-0">
+                        {exp.title}
+                        {exp.notes && <span className="text-gray-400 font-normal text-xs"> · {exp.notes}</span>}
+                      </p>
+                      <span className="font-semibold text-gray-900 tabular-nums flex-shrink-0">${Number(exp.amount).toFixed(2)}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {format(parseISO(exp.date), 'dd.MM.yyyy')}
+                      {exp.car && <> · {exp.car.make} {exp.car.model} <span className="font-mono font-semibold text-gray-600">{exp.car.plate}</span></>}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      {exp.paid
+                        ? <span className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-600">Оплачено</span>
+                        : <span className="px-2 py-0.5 rounded-lg text-xs font-medium bg-rose-50 text-rose-400">Не оплачено</span>}
+                      {exp.files?.length > 0 && (
+                        <button onClick={() => handlePreview(exp.files[0])} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-500">
+                          <ImageIcon size={12} /> Чеки {exp.files.length}
+                        </button>
+                      )}
+                      <span className="flex-1" />
+                      <button onClick={() => openEdit(exp)} className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center"><Edit2 size={14} /></button>
+                      <button onClick={() => setDeleteExpense(exp)} className="w-8 h-8 rounded-lg bg-gray-50 text-gray-400 flex items-center justify-center"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              </React.Fragment>
+            ))}
+            {filtered.length === 0 && <p className="px-4 py-8 text-center text-gray-400 text-sm">Расходов нет</p>}
+          </div>
+
+          {/* Компьютер — таблица */}
+          <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
               <tr className="text-left text-gray-500">
@@ -393,11 +436,12 @@ export default function ExpensesPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
       {!loading && filtered.length > 0 && (
-        <div className="flex items-center gap-8 mt-4 px-1">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-1 mt-4 px-1">
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">Всего:</span>
             <span className="text-lg font-bold text-gray-900">${totalFiltered.toFixed(2)}</span>
@@ -417,10 +461,10 @@ export default function ExpensesPage() {
       <button
         onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
         title="Добавить расход"
-        className="fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center transition-all duration-300 hover:scale-105"
+        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6 right-4 sm:right-6 z-30 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center transition-all duration-300 hover:scale-105"
         style={{
           boxShadow: '0 8px 24px rgba(79,70,229,0.45)',
-          transform: selected.size > 0 ? 'translateX(120px)' : 'translateX(0)',
+          transform: selected.size > 0 ? 'scale(0.6)' : 'scale(1)',
           opacity: selected.size > 0 ? 0 : 1,
           pointerEvents: selected.size > 0 ? 'none' : 'auto',
         }}
@@ -430,7 +474,7 @@ export default function ExpensesPage() {
 
       {/* Floating selection panel */}
       {selected.size > 0 && (
-        <div className="fixed bottom-6 right-6 z-40 bg-white rounded-2xl border border-gray-200 shadow-2xl px-5 py-4 w-[300px] animate-in">
+        <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-[300px] z-40 bg-white rounded-2xl border border-gray-200 shadow-2xl px-5 py-4 animate-in">
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-gray-500">Выбрано: {selected.size}</span>
             <button onClick={() => setSelected(new Set())} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
@@ -449,7 +493,7 @@ export default function ExpensesPage() {
 
       {/* Delete confirmation modal */}
       {deleteExpense && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setDeleteExpense(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteExpense(null)}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Удалить расход?</h2>
             <p className="text-sm text-gray-500 mb-6">
@@ -469,7 +513,7 @@ export default function ExpensesPage() {
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-semibold mb-5">{editExpense ? 'Редактировать расход' : 'Добавить расход'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -550,7 +594,7 @@ export default function ExpensesPage() {
 
       {/* Image preview */}
       {previewUrl && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => { setPreviewUrl(null); setPreviewLoading(false) }}>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => { setPreviewUrl(null); setPreviewLoading(false) }}>
           {previewLoading && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-7 h-7 border-2 border-white/20 border-t-white rounded-full animate-spin" />

@@ -194,10 +194,96 @@ export default function CalendarPage() {
 
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="sm:p-8 space-y-4 sm:space-y-8">
 
-      {/* Calendar */}
-      <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
+      {/* Телефон — карточки машин с полоской месяца */}
+      <div className="sm:hidden space-y-3">
+        <div className="bg-white rounded-[18px] p-3 card-shadow border border-gray-100/80">
+          <div className="flex items-center justify-between">
+            <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center"><ChevronLeft size={18} /></button>
+            <h2 className="text-base font-semibold capitalize">{format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
+            <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center"><ChevronRight size={18} /></button>
+          </div>
+          <div className="flex items-center justify-between gap-2 mt-3">
+            <p className="text-xs text-gray-500">
+              В простое сейчас: <span className="font-semibold text-red-500">{activeCars.filter(c => isBlocked(c.id, new Date())).length}</span>
+              {' · '}Зарплата: <span className="font-semibold text-gray-900">${totalSalary}</span>
+            </p>
+            <button
+              onClick={() => { setEditBlock(null); setForm({ car_id: '', start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '', reason: '' }); setShowModal(true) }}
+              className="flex-shrink-0 inline-flex items-center gap-1 px-3 h-9 rounded-xl bg-[#4F46E5] text-white text-sm font-medium"
+            >
+              <Plus size={15} /> Простой
+            </button>
+          </div>
+        </div>
+
+        {[...payrollRows].sort((a, b) => (isBlocked(b.car.id, new Date()) ? 1 : 0) - (isBlocked(a.car.id, new Date()) ? 1 : 0) || b.inactiveDays - a.inactiveDays).map(({ car, inactiveDays, salary }) => {
+          const monthBlocks = blocks
+            .filter(b => b.car_id === car.id && b.start_date <= format(days[days.length - 1], 'yyyy-MM-dd') && (!b.end_date || b.end_date >= format(days[0], 'yyyy-MM-dd')))
+            .sort((a, b) => a.start_date.localeCompare(b.start_date))
+          const idleNow = !!isBlocked(car.id, new Date())
+          return (
+            <div key={car.id} className="bg-white rounded-[18px] p-3.5 card-shadow border border-gray-100/80">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">
+                    {idleNow && <span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5 align-middle" />}
+                    {car.make} {car.model}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    <span className="font-mono font-semibold text-gray-600">{car.plate}</span>
+                    {inactiveDays > 0 && <> · простой {inactiveDays} дн.</>}
+                  </p>
+                </div>
+                <span className={`flex-shrink-0 px-2 py-1 rounded-lg text-xs font-bold tabular-nums ${
+                  salary === 150 ? 'bg-green-50 text-green-600' : salary === 75 ? 'bg-yellow-50 text-yellow-600' : 'bg-red-50 text-red-500'
+                }`}>${salary}</span>
+              </div>
+
+              {/* Полоска месяца */}
+              <div className="flex gap-[2px] mt-3">
+                {days.map(d => {
+                  const bl = isBlocked(car.id, d)
+                  return (
+                    <span
+                      key={d.toISOString()}
+                      className={`flex-1 h-3 rounded-[2px] ${bl ? 'bg-red-400' : 'bg-gray-100'} ${isToday(d) ? 'ring-1 ring-[#4F46E5] ring-offset-1' : ''}`}
+                    />
+                  )
+                })}
+              </div>
+              <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums">
+                <span>1</span><span>{Math.ceil(totalDays / 2)}</span><span>{totalDays}</span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {monthBlocks.map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => { setEditBlock(b); setForm({ car_id: b.car_id, start_date: b.start_date, end_date: b.end_date || '', reason: b.reason || '' }); setShowModal(true) }}
+                    className="inline-flex items-center gap-1 max-w-full px-2.5 h-8 rounded-lg bg-red-50 text-red-600 text-xs font-medium"
+                  >
+                    <span className="truncate">
+                      {format(parseISO(b.start_date), 'd MMM', { locale: ru })} — {b.end_date ? format(parseISO(b.end_date), 'd MMM', { locale: ru }) : 'без даты'}
+                      {b.reason ? ` · ${b.reason}` : ''}
+                    </span>
+                  </button>
+                ))}
+                <button
+                  onClick={() => { setEditBlock(null); setForm({ car_id: car.id, start_date: format(new Date(), 'yyyy-MM-dd'), end_date: '', reason: '' }); setShowModal(true) }}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg bg-gray-50 text-gray-600 text-xs font-medium"
+                >
+                  <Plus size={13} /> Простой
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Calendar (компьютер) */}
+      <div className="hidden sm:block bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80 overflow-x-auto">
         <div className="flex items-center justify-between mb-6">
           <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 rounded-xl hover:bg-gray-100 transition-colors"><ChevronLeft size={18} /></button>
           <h2 className="text-base font-semibold capitalize">{format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
@@ -246,7 +332,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Payroll section */}
-      <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
+      <div className="bg-white rounded-[18px] p-4 sm:p-6 card-shadow border border-gray-100/80">
         <h2 className="text-base font-semibold mb-1">Зарплата сотрудника за {format(currentMonth, 'LLLL yyyy', { locale: ru })}</h2>
         <p className="text-xs text-gray-400 mb-5">Простой &lt; 14 дней → $150 · простой ≥ 14 дней → $75 · весь месяц → $0</p>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5 p-3 rounded-xl bg-gray-50 border border-gray-100">
@@ -272,8 +358,8 @@ export default function CalendarPage() {
           <thead>
             <tr className="text-left text-gray-400 border-b">
               <th className="pb-2 font-medium">Авто</th>
-              <th className="pb-2 font-medium text-center">Дней работы</th>
-              <th className="pb-2 font-medium text-center">Дней простоя</th>
+              <th className="pb-2 font-medium text-center"><span className="sm:hidden">Работа</span><span className="hidden sm:inline">Дней работы</span></th>
+              <th className="pb-2 font-medium text-center"><span className="sm:hidden">Простой</span><span className="hidden sm:inline">Дней простоя</span></th>
               <th className="pb-2 font-medium text-right">Зарплата</th>
             </tr>
           </thead>
@@ -335,7 +421,7 @@ export default function CalendarPage() {
 
       {/* Block modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
           <div className="bg-white rounded-[18px] p-6 w-full max-w-sm card-shadow">
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-semibold">{editBlock ? 'Редактировать блокировку' : 'Добавить блокировку'}</h3>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText, Wallet } from 'lucide-react'
+import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText, Wallet, LayoutGrid, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
@@ -23,11 +23,15 @@ const nav = [
   { href: '/reports', icon: FileText, label: 'Отчёты', adminOnly: true },
 ]
 
+// Нижнее меню на телефоне: 4 главных раздела, остальные — в «Ещё»
+const MOBILE_MAIN = ['/dashboard', '/cars', '/calendar', '/expenses']
+
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { dark, toggle } = useTheme()
   const [access, setAccess] = useState<{ role: string; perms: string[] } | null>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   useEffect(() => {
     async function loadRole() {
@@ -55,6 +59,10 @@ export default function Sidebar() {
   }
 
   const visibleNav = !access || access.role === 'admin' ? nav : nav.filter(n => access.perms.includes(n.href))
+  const preferred = visibleNav.filter(n => MOBILE_MAIN.includes(n.href))
+  const mobileMain = [...preferred, ...visibleNav.filter(n => !MOBILE_MAIN.includes(n.href))].slice(0, 4)
+  const mobileMore = visibleNav.filter(n => !mobileMain.includes(n))
+  const moreActive = mobileMore.some(n => pathname === n.href)
 
   return (
     <>
@@ -107,34 +115,76 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* Mobile bottom nav — scrollable when many items */}
+      {/* Mobile bottom nav: 4 главных раздела + «Ещё» */}
       <nav
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 flex items-center overflow-x-auto px-1 py-1 gap-0.5"
-        style={{ paddingBottom: 'calc(0.25rem + env(safe-area-inset-bottom, 0px))', scrollbarWidth: 'none' }}
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur border-t border-gray-200/70 grid grid-cols-5 px-3 pt-1.5"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
       >
-        {visibleNav.map(({ href, icon: Icon, label }) => {
+        {mobileMain.map(({ href, icon: Icon, label }) => {
           const active = pathname === href
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl flex-shrink-0 min-w-[52px] ${
-                active ? 'text-[#4F46E5]' : 'text-gray-400'
-              }`}
+              className={`flex flex-col items-center justify-center gap-1 h-14 rounded-2xl min-w-0 ${active ? 'text-[#4F46E5]' : 'text-gray-500 active:bg-gray-100'}`}
             >
-              <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-              <span className="text-[9px] font-medium leading-none whitespace-nowrap">{label}</span>
+              <span className={`flex items-center justify-center w-12 h-8 rounded-full transition-colors ${active ? 'bg-[#EEF2FF]' : ''}`}>
+                <Icon size={23} strokeWidth={active ? 2.2 : 1.8} />
+              </span>
+              <span className={`text-[11px] leading-none truncate max-w-full ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
             </Link>
           )
         })}
         <button
-          onClick={handleLogout}
-          className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl flex-shrink-0 min-w-[52px] text-gray-400 active:text-red-500"
+          onClick={() => setMoreOpen(true)}
+          className={`flex flex-col items-center justify-center gap-1 h-14 rounded-2xl min-w-0 ${moreActive ? 'text-[#4F46E5]' : 'text-gray-500 active:bg-gray-100'}`}
         >
-          <LogOut size={20} strokeWidth={1.8} />
-          <span className="text-[9px] font-medium leading-none whitespace-nowrap">Выйти</span>
+          <span className={`flex items-center justify-center w-12 h-8 rounded-full ${moreActive ? 'bg-[#EEF2FF]' : ''}`}>
+            <LayoutGrid size={23} strokeWidth={moreActive ? 2.2 : 1.8} />
+          </span>
+          <span className={`text-[11px] leading-none ${moreActive ? 'font-semibold' : 'font-medium'}`}>Ещё</span>
         </button>
       </nav>
+
+      {/* «Ещё» — панель снизу */}
+      {moreOpen && (
+        <div className="sm:hidden fixed inset-0 z-[60] bg-black/30" onClick={() => setMoreOpen(false)}>
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-[24px] px-4 pt-3 animate-in"
+            style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="w-8" />
+              <span className="w-10 h-1.5 rounded-full bg-gray-200" />
+              <button onClick={() => setMoreOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {mobileMore.map(({ href, icon: Icon, label }) => {
+                const active = pathname === href
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMoreOpen(false)}
+                    className={`flex flex-col items-center justify-center gap-2 h-[84px] rounded-2xl ${active ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-gray-50 text-gray-700 active:bg-gray-100'}`}
+                  >
+                    <Icon size={24} strokeWidth={1.9} />
+                    <span className="text-[13px] font-medium">{label}</span>
+                  </Link>
+                )
+              })}
+              <button
+                onClick={handleLogout}
+                className="flex flex-col items-center justify-center gap-2 h-[84px] rounded-2xl bg-red-50 text-red-500 active:bg-red-100"
+              >
+                <LogOut size={24} strokeWidth={1.9} />
+                <span className="text-[13px] font-medium">Выйти</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

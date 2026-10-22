@@ -29,7 +29,7 @@ export default function CarsPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [form, setForm] = useState({ make: '', model: '', plate: '', owner_group: 'main' as string })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
-  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+  const rowRefs = useRef<Record<string, HTMLElement | null>>({})
   const [carBlocks, setCarBlocks] = useState<CarBlock[]>([])
 
   async function load() {
@@ -162,32 +162,32 @@ export default function CarsPage() {
   return (
     <div className="space-y-5">
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         {[
           { label: 'Всего', value: cars.length, color: 'text-gray-900', bg: 'bg-white' },
           { label: 'Активных', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'Неактивных', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
         ].map(s => (
-          <div key={s.label} className={`${s.bg} rounded-[18px] p-4 border border-gray-100/80 card-shadow`}>
-            <p className="text-xs text-gray-400 font-medium mb-1">{s.label}</p>
-            <p className={`text-3xl font-bold ${s.color}`}>{loading ? '—' : s.value}</p>
+          <div key={s.label} className={`${s.bg} rounded-[18px] p-3 sm:p-4 border border-gray-100/80 card-shadow min-w-0`}>
+            <p className="text-xs text-gray-400 font-medium mb-1 truncate">{s.label}</p>
+            <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${s.color}`}>{loading ? '—' : s.value}</p>
           </div>
         ))}
       </div>
 
       <Card>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-bold text-gray-900">Автомобили</h2>
           <button
             onClick={() => { setShowAdd(true); setForm({ make: '', model: '', plate: '', owner_group: 'main' }); setFormErrors({}) }}
             className="btn-primary flex items-center gap-2 px-4 py-2"
           >
-            <Plus size={15} /> Добавить авто
+            <Plus size={15} /> <span className="hidden sm:inline">Добавить авто</span><span className="sm:hidden">Добавить</span>
           </button>
         </div>
 
         {/* Search */}
-        <div className="px-6 py-3 border-b border-gray-100 relative">
+        <div className="px-4 sm:px-6 py-3 border-b border-gray-100 relative">
           <div className="relative">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -198,7 +198,7 @@ export default function CarsPage() {
             />
           </div>
           {searchResults.length > 0 && (
-            <div className="absolute left-6 right-6 top-full mt-1 bg-white rounded-[14px] border border-gray-100 py-1.5 z-50"
+            <div className="absolute left-4 right-4 sm:left-6 sm:right-6 top-full mt-1 bg-white rounded-[14px] border border-gray-100 py-1.5 z-50"
               style={{ boxShadow: '0 8px 28px rgba(17,17,26,0.12), 0 2px 8px rgba(17,17,26,0.06)' }}>
               {searchResults.map(car => (
                 <button
@@ -216,7 +216,61 @@ export default function CarsPage() {
 
         {loading ? (
           <div className="px-6 py-10 text-center text-gray-400 text-sm">Загрузка...</div>
-        ) : (
+        ) : (<>
+          {/* Телефон — карточки */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {cars.map(car => {
+              const block = carBlocks.find(b => b.car_id === car.id)
+              return (
+                <div
+                  key={car.id}
+                  ref={el => { rowRefs.current[car.id] = el }}
+                  className={`px-4 py-3.5 transition-colors ${highlightId === car.id ? 'bg-indigo-50' : ''}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{car.make} {car.model}</p>
+                      <span className="inline-block mt-1 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg text-xs font-mono font-semibold">{car.plate}</span>
+                    </div>
+                    <button
+                      onClick={() => setInactiveModal(car)}
+                      className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                        car.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
+                      }`}
+                    >
+                      {car.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {car.status === 'active' ? 'Активен' : 'Неактивен'}
+                    </button>
+                  </div>
+                  {(block || car.inactive_reason) && (
+                    <button
+                      onClick={() => { if (block) { setEditBlock(block); setEditBlockForm({ start_date: block.start_date, end_date: block.end_date || '', reason: block.reason || '' }) } }}
+                      className="mt-2 w-full text-left text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 flex items-center gap-2"
+                    >
+                      <span className="flex-1 min-w-0 truncate">
+                        {block ? `${fmtDate(block.start_date)}${block.end_date ? ` — ${fmtDate(block.end_date)}` : ''}${block.reason ? ` · ${block.reason}` : ''}` : car.inactive_reason}
+                      </span>
+                      {block && <Edit2 size={12} className="flex-shrink-0 text-gray-400" />}
+                    </button>
+                  )}
+                  <div className="mt-2.5 flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleToggleDelisted(car)}
+                      className={`flex-1 h-9 rounded-xl px-2.5 flex items-center justify-center gap-1.5 text-xs font-medium ${car.delisted ? 'bg-orange-50 text-orange-500' : 'bg-gray-50 text-gray-500'}`}
+                    >
+                      {car.delisted ? <><Eye size={13} /> Вернуть в листинг</> : <><EyeOff size={13} /> Снять с листинга</>}
+                    </button>
+                    <button onClick={() => openEdit(car)} className="w-9 h-9 rounded-xl bg-gray-50 text-gray-500 flex items-center justify-center"><Edit2 size={15} /></button>
+                    <button onClick={() => setDeleteModal(car)} className="w-9 h-9 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center"><Trash2 size={15} /></button>
+                  </div>
+                </div>
+              )
+            })}
+            {cars.length === 0 && <p className="px-4 py-12 text-center text-gray-400 text-sm">Авто не добавлено</p>}
+          </div>
+
+          {/* Компьютер — таблица */}
+          <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-400 uppercase tracking-wider bg-gray-50/60">
@@ -284,7 +338,8 @@ export default function CarsPage() {
               )}
             </tbody>
           </table>
-        )}
+          </div>
+        </>)}
       </Card>
 
       {/* Add/Edit Modal */}
