@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { Car } from '@/types'
-import { Send, Copy, Check, Download, ChevronLeft, ChevronRight, Car as CarIcon, ShieldAlert, Users, Layers } from 'lucide-react'
+import { Send, Copy, Check, Download, ChevronLeft, ChevronRight, Car as CarIcon, ShieldAlert, Users, Layers, Wallet } from 'lucide-react'
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, isSameMonth, addMonths, subMonths, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
@@ -29,6 +29,21 @@ interface Claim {
 }
 
 type Cell = string | number
+
+// ── Доходы (данные раздела «Доходы») ──
+interface RevAcc { key: string; label: string; sort: number; active_from: string; active_until: string | null }
+interface RevCar { id: string; account: string; name: string; added_from: string; sold_from: string | null }
+interface RevEntry { revenue_car_id: string; period: string; gross: number; repair: number; claim_items: { claim: number; supplement: number; pct: number }[]; other_items: { desc: string; amount: number }[] }
+interface RevExp { period: string; salary1: number; salary2: number; items: { desc: string; amount: number }[] }
+const num = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
+function revCalc(e?: RevEntry) {
+  if (!e) return { gross: 0, net: 0 }
+  const g = num(e.gross)
+  const cl = (e.claim_items || []).reduce((s, c) => s + num(c.claim) + num(c.supplement) - num(c.supplement) * num(c.pct), 0)
+  const o = (e.other_items || []).reduce((s, x) => s + num(x.amount), 0)
+  return { gross: g, net: g + cl - num(e.repair) - o }
+}
+const usd = (v: number) => { const r = Math.round(v * 100) / 100; return `${r < 0 ? '−' : ''}$${Math.abs(r).toLocaleString('en-US', { maximumFractionDigits: 2 })}` }
 
 interface Report {
   key: string
@@ -87,19 +102,25 @@ export default function ReportsPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [claims, setClaims] = useState<Claim[]>([])
+  const [rev, setRev] = useState<{ accs: RevAcc[]; cars: RevCar[]; entries: RevEntry[]; exp: RevExp[] }>({ accs: [], cars: [], entries: [], exp: [] })
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [copied, setCopied] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [carsRes, blocksRes, claimsRes] = await Promise.all([
+    const [carsRes, blocksRes, claimsRes, raRes, rcRes, reRes, rxRes] = await Promise.all([
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date, reason'),
       supabase.from('claims').select('*, car:cars(make,model,plate)').order('opened_date', { ascending: true }),
+      supabase.from('revenue_accounts').select('key, label, sort, active_from, active_until').order('sort'),
+      supabase.from('revenue_cars').select('id, account, name, added_from, sold_from').order('sort'),
+      supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items'),
+      supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
     ])
     setCars(carsRes.data || [])
     setBlocks((blocksRes.data as Block[]) || [])
     setClaims((claimsRes.data as Claim[]) || [])
+    setRev({ accs: (raRes.data as RevAcc[]) || [], cars: (rcRes.data as RevCar[]) || [], entries: (reRes.data as RevEntry[]) || [], exp: (rxRes.data as RevExp[]) || [] })
     setLoading(false)
   }, [])
 
@@ -208,6 +229,40 @@ export default function ReportsPage() {
     ['Итого', '', '', '', salaryTotal],
   ]
 
+  // ── 4. Доходы ──
+  const revP = format(month, 'yyyy-MM-01')
+  const revRows = rev.accs.map(a => {
+    const hasEntry = (id: string) => rev.entries.some(e => e.revenue_car_id === id && e.period === revP)
+    const cars = rev.cars.filter(c => c.account === a.key && ((c.added_from <= revP && (!c.sold_from || revP < c.sold_from)) || hasEntry(c.id)))
+    const t = cars.reduce((acc, c) => { const r = revCalc(rev.entries.find(e => e.revenue_car_id === c.id && e.period === revP)); return { gross: acc.gross + r.gross, net: acc.net + r.net } }, { gross: 0, net: 0 })
+    const active = (a.active_from <= revP && (!a.active_until || revP <= a.active_until)) || cars.some(c => hasEntry(c.id))
+    return { a, cars: cars.length, ...t, active }
+  }).filter(x => x.active && (x.cars > 0 || x.net !== 0))
+  const revExp = rev.exp.find(x => x.period === revP)
+  const revExpTotal = num(revExp?.salary1) + num(revExp?.salary2) + (revExp?.items || []).reduce((s, i) => s + num(i.amount), 0)
+  const revGross = revRows.reduce((s, x) => s + x.gross, 0)
+  const revTotal = revRows.reduce((s, x) => s + x.net, 0)
+  const revProfit = revTotal - revExpTotal
+  const incomeText = [
+    `💰 Доходы за ${monthLabel}`,
+    '',
+    ...(revRows.length ? revRows.map(x => `• ${x.a.label}: ${usd(x.net)}`) : ['• нет данных']),
+    '',
+    `Gross: ${usd(revGross)}`,
+    `Итого по аккаунтам: ${usd(revTotal)}`,
+    `Расходы компании: −${usd(Math.abs(revExpTotal))}`,
+    '',
+    `${revProfit >= 0 ? '✅' : '🔻'} Чистая прибыль: ${usd(revProfit)}`,
+  ].join('\n')
+  const incomeCsv: Cell[][] = [
+    ['Аккаунт', 'Машин', 'Gross', 'Итог'],
+    ...revRows.map(x => [x.a.label, x.cars, Math.round(x.gross * 100) / 100, Math.round(x.net * 100) / 100] as Cell[]),
+    [],
+    ['Итого по аккаунтам', '', Math.round(revGross * 100) / 100, Math.round(revTotal * 100) / 100],
+    ['Расходы компании', '', '', Math.round(revExpTotal * 100) / 100],
+    ['Чистая прибыль', '', '', Math.round(revProfit * 100) / 100],
+  ]
+
   const reports: Report[] = [
     {
       key: 'fleet', title: 'Автопарк сегодня', icon: CarIcon, color: 'from-[#3B82F6] to-[#2563EB]',
@@ -223,6 +278,11 @@ export default function ReportsPage() {
       key: 'salary', title: 'Зарплата работника', icon: Users, color: 'from-[#10B981] to-[#059669]',
       subtitle: `$${salaryTotal} · ${full.length} × $150 · ${half.length} × $75${zero.length ? ` · ${zero.length} × $0` : ''}`,
       text: salaryText, csv: salaryCsv, file: `zarplata-${format(month, 'yyyy-MM')}.csv`,
+    },
+    {
+      key: 'income', title: 'Доходы', icon: Wallet, color: 'from-[#8B5CF6] to-[#6D28D9]',
+      subtitle: `прибыль ${usd(revProfit)} · gross ${usd(revGross)}`,
+      text: incomeText, csv: incomeCsv, file: `dohody-${format(month, 'yyyy-MM')}.csv`,
     },
   ]
 
@@ -259,7 +319,7 @@ export default function ReportsPage() {
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">Все отчёты одним сообщением</p>
-            <p className="text-xs text-gray-400">Автопарк + клеймы + зарплата</p>
+            <p className="text-xs text-gray-400">Автопарк + клеймы + зарплата + доходы</p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -273,7 +333,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Report cards */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {reports.map(r => (
           <div key={r.key} className="bg-white rounded-[18px] border border-gray-100/80 card-shadow flex flex-col overflow-hidden">
             <div className="flex items-start gap-3 p-4 pb-3">
