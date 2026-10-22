@@ -10,16 +10,16 @@
 - Код приложения: папка `turo-fleet-archive/` репозитория `ilzakharov163/turo-fleet`. Ветка `main`.
 - Деплой: Vercel, автодеплой из `main`. Прод: https://turo-fleet-archive.vercel.app
 - База: Supabase, project id `fsvttaesxlwhndcwtqqz`. Клиент: `createClient()` из `@/lib/supabase`. Лог действий: `log(action, entity, id, details)` из `@/lib/logger` (таблица `activity_log`).
+- Тема: всегда как в системе (iPhone/Mac). Класс `dark` на `<html>` ставит скрипт в `app/layout.tsx` до отрисовки, `ThemeContext` следит за переключением. Тёмная палитра — подмена CSS-переменных Tailwind в `globals.css` (`html.dark { --color-white, --color-gray-*, --color-*-50/100 … }`), поэтому новые классы работают сами. Не использовать светлые hex-цвета в классах (`bg-[#EEF2FF]` и т.п.) — брать `bg-indigo-50` и т.д. Значки — мягкие подложки (`bg-indigo-50 text-[#4F46E5] dark:text-indigo-300`), без градиентов.
 - Стиль UI: карточки `bg-white rounded-[18px] border border-gray-100/80 card-shadow`, акцент indigo (#4F46E5), таблицы с сеткой `border-gray-200`, шапки `bg-gray-100`, цифры `tabular-nums`. Мобильная версия обязательна (нижняя навигация, горизонтальный скролл таблиц внутри `overflow-x-auto`).
 - В `src/app/(app)/layout.tsx` у колонки контента стоит `min-w-0` — не убирать (иначе на телефоне страница уезжает вбок).
 - Телефон (< 640px, `sm:`): у `main` стоит `overflow-x-clip`, у html/body `overscroll-behavior: none` — страница не двигается вбок. Широкие таблицы на телефоне не показываем: Авто, Расходы, Календарь имеют отдельный мобильный вид карточками (`sm:hidden`) и таблицу/сетку для компьютера (`hidden sm:block`). Плавающие кнопки поднимать над нижним меню: `bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6`.
-- Нижнее меню телефона (Sidebar.tsx): 4 главных раздела `MOBILE_MAIN` (Дашборд, Авто, Календарь, Расходы) + «Ещё» — панель снизу с остальными разделами и «Выйти».
+- Нижнее меню телефона (Sidebar.tsx): 4 главных раздела `MOBILE_MAIN` (Дашборд, Авто, Расходы, Доходы) + «Ещё» — панель снизу с остальными разделами и «Выйти».
 
 ## Разделы (src/app/(app)/…)
-Порядок в меню: Дашборд, Авто, Календарь, Расходы, Доходы, Клеймы, Наклейки, Аналитика, Команда, История, Отчёты. (Тех.обслуживание убрано из меню.)
+Порядок в меню: Дашборд, Авто, Расходы, Доходы, Клеймы, Наклейки, Аналитика, Команда, История, Отчёты. (Тех.обслуживание убрано из меню; Календарь с 22.10.2026 — вкладка «Простои и зарплата» в «Авто».)
 - **dashboard** — кликабельные карточки (Прибыль, Автомобили, Активных, Расходы за месяц, Зарплата работника), быстрые действия, «Требует внимания», «Сейчас в простое».
-- **cars** — машины (`cars`: make, model, plate, delisted, owner_group).
-- **calendar** — простои (`car_blocks`: car_id, start_date, end_date null = бессрочно, reason) + калькулятор зарплаты работника.
+- **cars** — «Авто», две вкладки: «Машины» (`components/views/CarsView.tsx`, таблица `cars`: make, model, plate, delisted, owner_group) и «Простои и зарплата» (`/cars?tab=downtime`, `components/views/DowntimeView.tsx`: `car_blocks` — car_id, start_date, end_date null = бессрочно, reason — и расчёт зарплаты работника). `/calendar` перенаправляет на вторую вкладку. Старая галочка `/calendar` в permissions даёт доступ к «Авто» (Sidebar); в «Команде» её больше нет. Блок «История выплат» удалён (таблицы `salary_payments` в базе нет).
 - **expenses** — расходы по машинам (`expenses`: car_id, title, amount, date, files, paid, notes), фильтр по категориям.
 - **income** — «Доходы» (см. ниже, самый большой раздел).
 - **claims** — клеймы (`claims`: status waiting/in_repair/done, opened_date, completed_date, initial_payment_received, supplement_paid, notes). Завершённые показывают только машину, номер и дату завершения.

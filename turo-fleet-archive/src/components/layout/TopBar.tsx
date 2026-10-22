@@ -8,7 +8,6 @@ import { createClient } from '@/lib/supabase'
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Дашборд',
   '/cars': 'Автомобили',
-  '/calendar': 'Календарь',
   '/expenses': 'Расходы',
   '/income': 'Доходы',
   '/analytics': 'Аналитика',
@@ -74,7 +73,7 @@ export default function TopBar({ pathname }: { pathname: string }) {
         </button>
 
         <Link href="/settings" className="flex items-center gap-2.5 pl-3 border-l border-gray-200 rounded-lg py-1 pr-2 hover:bg-gray-50 transition-colors" title="Личный кабинет">
-          <div className="w-9 h-9 rounded-[12px] bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] flex items-center justify-center text-white text-xs font-bold" style={{boxShadow:'0 2px 8px rgba(79,70,229,0.30)'}}>
+          <div className="w-9 h-9 rounded-[12px] bg-[#4F46E5] flex items-center justify-center text-white text-xs font-bold" >
             {initials}
           </div>
           <div className="hidden sm:block whitespace-nowrap">

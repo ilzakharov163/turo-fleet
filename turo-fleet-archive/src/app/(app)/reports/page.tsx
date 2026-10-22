@@ -269,23 +269,23 @@ export default function ReportsPage() {
 
   const reports: Report[] = [
     {
-      key: 'fleet', title: 'Автопарк сегодня', icon: CarIcon, color: 'from-[#3B82F6] to-[#2563EB]',
+      key: 'fleet', title: 'Автопарк сегодня', icon: CarIcon, color: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
       subtitle: `${activeCars.length} активны · ${idleCars.length} в простое`,
       text: fleetText, csv: fleetCsv, file: `avtopark-${format(now, 'yyyy-MM-dd')}.csv`,
     },
     {
-      key: 'claims', title: 'Клеймы', icon: ShieldAlert, color: 'from-[#F59E0B] to-[#D97706]',
+      key: 'claims', title: 'Клеймы', icon: ShieldAlert, color: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
       subtitle: `${waiting.length} ждут · ${inRepair.length} в ремонте · ${doneInMonth.length} завершено`,
       text: claimsText, csv: claimsCsv, file: `kleimy-${format(now, 'yyyy-MM-dd')}.csv`,
     },
     {
-      key: 'salary', title: 'Зарплата работника', icon: Users, color: 'from-[#10B981] to-[#059669]',
+      key: 'salary', title: 'Зарплата работника', icon: Users, color: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
       subtitle: `$${salaryTotal} · ${full.length} × $150 · ${half.length} × $75${zero.length ? ` · ${zero.length} × $0` : ''}`,
       text: salaryText, csv: salaryCsv, file: `zarplata-${format(month, 'yyyy-MM')}.csv`,
     },
     // Без доступа к «Доходам» база не отдаёт аккаунты — отчёт не показываем
     ...(rev.accs.length ? [{
-      key: 'income', title: 'Доходы', icon: Wallet, color: 'from-[#8B5CF6] to-[#6D28D9]',
+      key: 'income', title: 'Доходы', icon: Wallet, color: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
       subtitle: `прибыль ${usd(revProfit)} · gross ${usd(revGross)}`,
       text: incomeText, csv: incomeCsv, file: `dohody-${format(month, 'yyyy-MM')}.csv`,
     }] : []),
@@ -319,8 +319,8 @@ export default function ReportsPage() {
       {/* All in one */}
       <div className="bg-white rounded-[18px] p-4 border border-gray-100/80 card-shadow flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#4F46E5] flex items-center justify-center flex-shrink-0">
-            <Layers size={18} className="text-white" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 flex items-center justify-center flex-shrink-0">
+            <Layers size={18} />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900">Все отчёты одним сообщением</p>
@@ -342,8 +342,8 @@ export default function ReportsPage() {
         {reports.map(r => (
           <div key={r.key} className="bg-white rounded-[18px] border border-gray-100/80 card-shadow flex flex-col overflow-hidden">
             <div className="flex items-start gap-3 p-4 pb-3">
-              <div className={`w-10 h-10 rounded-2xl bg-gradient-to-br ${r.color} flex items-center justify-center flex-shrink-0`}>
-                <r.icon size={18} className="text-white" />
+              <div className={`w-10 h-10 rounded-xl ${r.color} flex items-center justify-center flex-shrink-0`}>
+                <r.icon size={18} />
               </div>
               <div className="min-w-0">
                 <h2 className="text-base font-bold text-gray-900">{r.title}</h2>

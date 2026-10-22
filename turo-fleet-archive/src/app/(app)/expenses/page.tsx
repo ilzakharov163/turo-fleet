@@ -252,7 +252,7 @@ export default function ExpensesPage() {
         <h1 className="hidden sm:block text-xl font-bold text-gray-900">Расходы</h1>
         <button
           onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className="btn-primary flex items-center gap-2 px-4 py-2"
         >
           <Plus size={16} /> <span className="hidden sm:inline">Добавить расход</span><span className="sm:hidden">Добавить</span>
         </button>
@@ -461,9 +461,9 @@ export default function ExpensesPage() {
       <button
         onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
         title="Добавить расход"
-        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6 right-4 sm:right-6 z-30 w-14 h-14 rounded-full bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] text-white flex items-center justify-center transition-all duration-300 hover:scale-105"
+        className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6 right-4 sm:right-6 z-30 w-14 h-14 rounded-full bg-[#4F46E5] text-white flex items-center justify-center transition-all duration-300 hover:scale-105"
         style={{
-          boxShadow: '0 8px 24px rgba(79,70,229,0.45)',
+          boxShadow: '0 6px 18px rgba(79,70,229,0.35)',
           transform: selected.size > 0 ? 'scale(0.6)' : 'scale(1)',
           opacity: selected.size > 0 ? 0 : 1,
           pointerEvents: selected.size > 0 ? 'none' : 'auto',

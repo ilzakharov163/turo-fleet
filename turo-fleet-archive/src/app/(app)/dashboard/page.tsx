@@ -244,7 +244,7 @@ export default function DashboardPage() {
       sub: !profit.hasGross ? 'Gross за месяц ещё не внесён' : profit.delta === null ? 'Чистая прибыль за месяц' : `${profit.delta >= 0 ? '+' : ''}${usd(profit.delta)} к ${/[ьй]$/.test(prevMonth) ? prevMonth.slice(0, -1) + 'ю' : prevMonth + 'у'}`,
       href: '/income',
       icon: Wallet,
-      gradient: profit.value < 0 ? 'from-[#F43F5E] to-[#E11D48]' : 'from-[#4F46E5] to-[#4338CA]',
+      tint: profit.value < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
       wide: true,
     }] : []),
     {
@@ -253,15 +253,15 @@ export default function DashboardPage() {
       sub: cars.length !== listed.length ? `Снято с листинга: ${cars.length - listed.length}` : 'Всего в парке',
       href: '/cars',
       icon: CarIcon,
-      gradient: 'from-[#3B82F6] to-[#2563EB]',
+      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
     {
       label: 'Активных автомобилей',
       value: activeCount,
       sub: idle.length ? `В простое сейчас: ${idle.length}` : 'Все машины работают',
-      href: '/calendar',
+      href: '/cars?tab=downtime',
       icon: TrendingUp,
-      gradient: 'from-[#F59E0B] to-[#D97706]',
+      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
     {
       label: 'Расходы за месяц',
@@ -269,21 +269,21 @@ export default function DashboardPage() {
       sub: unpaidTotal > 0 ? `Не оплачено: $${unpaidTotal.toFixed(0)} (${unpaidCount})` : 'Всё оплачено',
       href: '/expenses',
       icon: DollarSign,
-      gradient: 'from-[#8B5CF6] to-[#7C3AED]',
+      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
     {
       label: 'Зарплата работника',
       value: `$${salary.total}`,
       sub: `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
-      href: '/calendar',
+      href: '/cars?tab=downtime',
       icon: Users,
-      gradient: 'from-[#10B981] to-[#059669]',
+      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
   ]
 
   const quickActions = [
     { label: 'Добавить расход', href: '/expenses', icon: Plus },
-    { label: 'Отметить простой', href: '/calendar', icon: CalendarDays },
+    { label: 'Отметить простой', href: '/cars?tab=downtime', icon: CalendarDays },
     { label: 'Новый клейм', href: '/claims', icon: ShieldAlert },
     { label: 'Наклейки', href: '/stickers', icon: Tag },
     { label: 'Отчёты в Telegram', href: '/reports', icon: FileText },
@@ -304,8 +304,8 @@ export default function DashboardPage() {
                 <p className="text-xs sm:text-sm text-gray-500 font-medium">{card.label}</p>
                 <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? '—' : card.value}</p>
               </div>
-              <div className={`w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-2xl bg-gradient-to-br ${card.gradient} flex items-center justify-center shadow-md`}>
-                <card.icon size={20} className="text-white" strokeWidth={2} />
+              <div className={`w-10 h-10 sm:w-11 sm:h-11 flex-shrink-0 rounded-xl ${card.tint} flex items-center justify-center`}>
+                <card.icon size={20} strokeWidth={2} />
               </div>
             </div>
             <p className="text-xs text-gray-400 flex items-center justify-between gap-2">
@@ -376,8 +376,8 @@ export default function DashboardPage() {
             <h2 className="text-base font-bold text-gray-900">
               Сейчас в простое {!loading && <span className="text-gray-400 font-medium">· {idle.length}</span>}
             </h2>
-            <Link href="/calendar" className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">
-              Календарь <ArrowRight size={14} />
+            <Link href="/cars?tab=downtime" className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">
+              Простои <ArrowRight size={14} />
             </Link>
           </div>
           {loading ? (
@@ -387,7 +387,7 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y divide-gray-100 max-h-72 overflow-y-auto pb-2">
               {idle.map(({ car, until, reason }) => (
-                <Link key={car.id} href="/calendar" className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors">
+                <Link key={car.id} href="/cars?tab=downtime" className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50 transition-colors">
                   <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 truncate">

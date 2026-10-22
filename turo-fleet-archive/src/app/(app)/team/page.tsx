@@ -22,8 +22,7 @@ interface Member {
 // Разделы, к которым можно выдать доступ
 const SECTIONS: { href: string; label: string }[] = [
   { href: '/dashboard', label: 'Дашборд' },
-  { href: '/cars', label: 'Авто' },
-  { href: '/calendar', label: 'Календарь' },
+  { href: '/cars', label: 'Авто и простои' },
   { href: '/expenses', label: 'Расходы' },
   { href: '/income', label: 'Доходы' },
   { href: '/claims', label: 'Клеймы' },
@@ -40,7 +39,7 @@ const ROLES: { value: Role; label: string; hint: string; icon: typeof Shield; ba
 ]
 
 const PRESETS: Record<Exclude<Role, 'admin'>, string[]> = {
-  partner: ['/dashboard', '/cars', '/calendar', '/expenses', '/claims', '/stickers', '/analytics', '/reports'],
+  partner: ['/dashboard', '/cars', '/expenses', '/claims', '/stickers', '/analytics', '/reports'],
   employee: ['/expenses'],
 }
 
@@ -124,7 +123,7 @@ export default function TeamPage() {
             const isMe = m.id === me
             return (
               <div key={m.id} className="flex items-start gap-3 px-5 py-4">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] flex items-center justify-center text-white text-sm font-bold flex-shrink-0 uppercase">
+                <div className="w-10 h-10 rounded-xl bg-[#4F46E5] flex items-center justify-center text-white text-sm font-bold flex-shrink-0 uppercase">
                   {name(m).slice(0, 2)}
                 </div>
                 <div className="flex-1 min-w-0">

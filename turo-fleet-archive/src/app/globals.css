@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   --background: #F4F5F9;
@@ -6,53 +7,73 @@
   --sidebar-width: 72px;
 }
 
-/* ── Dark mode (образец: глубокий тёмно-синий) ─────── */
+/* ── Тёмная тема (включается по настройке системы, см. ThemeContext) ──
+   Tailwind v4 строит цвета через переменные, поэтому подменяем палитру целиком:
+   серые инвертированы, светлые цветные подложки (-50/-100) — полупрозрачные. */
 html.dark {
   color-scheme: dark;
-  --background: #0D1121;
+  --background: #0E1322;
+  --foreground: #E6E9F2;
+  --color-white: #161C2E;
+  --color-gray-50: #1B2236;
+  --color-gray-100: #212A41;
+  --color-gray-200: #2C3550;
+  --color-gray-300: #3B4565;
+  --color-gray-400: #6E7794;
+  --color-gray-500: #8C94AD;
+  --color-gray-600: #A6ADC2;
+  --color-gray-700: #C0C5D5;
+  --color-gray-800: #D8DCE7;
+  --color-gray-900: #EEF0F6;
+  --color-indigo-50: rgba(99, 102, 241, 0.16);
+  --color-indigo-100: rgba(99, 102, 241, 0.24);
+  --color-blue-50: rgba(59, 130, 246, 0.14);
+  --color-blue-100: rgba(59, 130, 246, 0.22);
+  --color-emerald-50: rgba(16, 185, 129, 0.13);
+  --color-emerald-100: rgba(16, 185, 129, 0.2);
+  --color-green-50: rgba(34, 197, 94, 0.13);
+  --color-green-100: rgba(34, 197, 94, 0.2);
+  --color-red-50: rgba(239, 68, 68, 0.14);
+  --color-red-100: rgba(239, 68, 68, 0.22);
+  --color-rose-50: rgba(244, 63, 94, 0.13);
+  --color-rose-100: rgba(244, 63, 94, 0.2);
+  --color-yellow-50: rgba(234, 179, 8, 0.13);
+  --color-yellow-100: rgba(234, 179, 8, 0.2);
+  --color-amber-50: rgba(245, 158, 11, 0.13);
+  --color-amber-100: rgba(245, 158, 11, 0.2);
+  --color-orange-50: rgba(249, 115, 22, 0.13);
+  --color-orange-100: rgba(249, 115, 22, 0.2);
+  --color-purple-100: rgba(168, 85, 247, 0.2);
+  /* Цветной текст чуть светлее, чтобы читался на тёмном */
+  --color-red-500: #F87171;
+  --color-red-600: #F87171;
+  --color-rose-400: #FB7185;
+  --color-emerald-600: #34D399;
+  --color-green-600: #4ADE80;
+  --color-yellow-600: #FACC15;
+  --color-yellow-700: #FACC15;
+  --color-orange-500: #FB923C;
+  --color-blue-500: #60A5FA;
+  --color-blue-600: #60A5FA;
+  --color-blue-700: #93B4FF;
+  --color-indigo-600: #A5B4FC;
+  --color-indigo-700: #A5B4FC;
 }
-html.dark body {
-  background: #0D1121;
-  color: #E8EAF0;
-}
-/* Cards & surfaces */
-html.dark .bg-white          { background-color: #131929; }
-html.dark .bg-gray-50        { background-color: #101422; }
-/* Table thead bg, subtle row stripe */
-html.dark .bg-gray-50\/60    { background-color: rgba(255,255,255,0.02); }
-html.dark tr:hover .hover\:bg-gray-50\/60,
-html.dark .hover\:bg-gray-50\/60:hover { background-color: rgba(255,255,255,0.04); }
-html.dark .bg-gray-100       { background-color: #1A2238; }
-/* Text */
-html.dark .text-gray-900     { color: #E8EAF0; }
-html.dark .text-gray-800     { color: #D0D4E0; }
-html.dark .text-gray-700     { color: #B8BDCC; }
-html.dark .text-gray-600     { color: #8B92A8; }
-html.dark .text-gray-500     { color: #8B92A8; }
-html.dark .text-gray-400     { color: #5A6278; }
-/* Borders — полностью убраны для карточек */
-html.dark .border-gray-100,
-html.dark .border-gray-100\/80    { border-color: transparent; }
-html.dark [class*="border-gray-100"] { border-color: transparent; }
-html.dark .border-b               { border-color: rgba(255,255,255,0.04); }
-html.dark .border-gray-200        { border-color: rgba(255,255,255,0.06); }
-html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.04); }
-html.dark .card-shadow            { box-shadow: none; }
-/* Inputs */
-html.dark input                   { background-color: #1A2238; color: #E8EAF0; border-color: rgba(255,255,255,0.08); }
-html.dark input::placeholder      { color: #3D4460; }
-/* Sidebar nav hover */
-html.dark .hover\:bg-gray-50:hover { background-color: rgba(255,255,255,0.05); }
-/* Car badges & colored chips */
-html.dark .bg-blue-50   { background-color: #1A2545; }
-html.dark .text-blue-700 { color: #7B9EFF; }
-/* Table lines — все линии одинаковой интенсивности */
-html.dark table thead tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
-html.dark table tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); }
-html.dark table tbody tr:last-child { border-bottom: none; }
-html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.04) !important; }
-/* Scrollbar */
-html.dark ::-webkit-scrollbar-thumb { background: #1E2845; }
+html.dark body { background: var(--background); color: var(--foreground); }
+/* Белый текст на кнопках остаётся белым */
+html.dark .text-white { color: #fff; }
+html.dark .text-white\/50 { color: rgba(255,255,255,0.5); }
+html.dark .text-white\/70 { color: rgba(255,255,255,0.7); }
+html.dark .text-white\/75 { color: rgba(255,255,255,0.75); }
+html.dark .text-white\/80 { color: rgba(255,255,255,0.8); }
+html.dark .border-white\/20 { border-color: rgba(255,255,255,0.2); }
+/* Тёмные плашки с белым текстом (активный фильтр, подсказки) */
+html.dark .bg-gray-900 { background-color: #3B4565; }
+html.dark .card-shadow,
+html.dark .card-shadow:hover { box-shadow: none; }
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: #5D6684; }
+html.dark ::-webkit-scrollbar-thumb { background: #2C3550; }
 
 /* Как в приложении: без пружинящего отскока и сдвига страницы пальцем */
 html, body {

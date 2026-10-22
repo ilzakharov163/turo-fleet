@@ -113,7 +113,7 @@ export default function SettingsPage() {
     <div className="p-8 max-w-5xl">
       {/* Profile header */}
       <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80 flex items-center gap-4 mb-6">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#4F46E5] to-[#7C3AED] flex items-center justify-center text-white text-xl font-bold" style={{ boxShadow: '0 4px 14px rgba(79,70,229,0.35)' }}>
+        <div className="w-16 h-16 rounded-2xl bg-[#4F46E5] flex items-center justify-center text-white text-xl font-bold" style={{ boxShadow: '0 4px 14px rgba(79,70,229,0.35)' }}>
           {initials}
         </div>
         <div className="flex-1">

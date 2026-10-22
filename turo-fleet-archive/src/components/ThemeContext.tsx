@@ -2,26 +2,24 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 
-const ThemeContext = createContext<{ dark: boolean; toggle: () => void }>({ dark: false, toggle: () => {} })
+// Тема всегда как в системе (iPhone/Mac): светлая днём, тёмная — если так настроено.
+// Класс ставится ещё до отрисовки скриптом в app/layout.tsx, здесь — следим за переключением.
+const ThemeContext = createContext<{ dark: boolean }>({ dark: false })
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [dark, setDark] = useState(false)
+  const [dark, setDark] = useState(() => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'))
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme')
-    const isDark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
-    setDark(isDark)
-    document.documentElement.classList.toggle('dark', isDark)
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => {
+      document.documentElement.classList.toggle('dark', mq.matches)
+      setDark(mq.matches)
+    }
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
   }, [])
 
-  function toggle() {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
-  }
-
-  return <ThemeContext.Provider value={{ dark, toggle }}>{children}</ThemeContext.Provider>
+  return <ThemeContext.Provider value={{ dark }}>{children}</ThemeContext.Provider>
 }
 
 export const useTheme = () => useContext(ThemeContext)

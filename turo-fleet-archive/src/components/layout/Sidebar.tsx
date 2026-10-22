@@ -3,16 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, Calendar, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText, Wallet, LayoutGrid, X } from 'lucide-react'
+import { LayoutDashboard, Car, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText, Wallet, LayoutGrid, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
-import { useTheme } from '@/components/ThemeContext'
 
 const nav = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд', adminOnly: true },
   { href: '/cars', icon: Car, label: 'Авто', adminOnly: true },
-  { href: '/calendar', icon: Calendar, label: 'Календарь', adminOnly: true },
   { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
   { href: '/income', icon: Wallet, label: 'Доходы', adminOnly: true },
   { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
@@ -24,12 +22,11 @@ const nav = [
 ]
 
 // Нижнее меню на телефоне: 4 главных раздела, остальные — в «Ещё»
-const MOBILE_MAIN = ['/dashboard', '/cars', '/calendar', '/expenses']
+const MOBILE_MAIN = ['/dashboard', '/cars', '/expenses', '/income']
 
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const { dark, toggle } = useTheme()
   const [access, setAccess] = useState<{ role: string; perms: string[] } | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
 
@@ -42,6 +39,7 @@ export default function Sidebar() {
       const role = (data?.role ?? 'admin') as string
       let perms: string[] = (data?.permissions as string[] | null) ?? []
       if (role !== 'admin' && perms.length === 0) perms = ['/expenses']
+      if (perms.includes('/calendar') && !perms.includes('/cars')) perms = [...perms, '/cars']
       setAccess({ role, perms })
       // Сотрудник/партнёр видит только разрешённые разделы
       if (role !== 'admin') {
@@ -84,7 +82,7 @@ export default function Sidebar() {
                 title={label}
                 className={`relative group w-full flex items-center justify-center h-11 rounded-2xl transition-all duration-150 ${
                   active
-                    ? 'bg-[#EEF2FF] text-[#4F46E5]'
+                    ? 'bg-indigo-50 text-[#4F46E5]'
                     : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
                 }`}
               >
@@ -128,7 +126,7 @@ export default function Sidebar() {
               href={href}
               className={`flex flex-col items-center justify-center gap-1 h-14 rounded-2xl min-w-0 ${active ? 'text-[#4F46E5]' : 'text-gray-500 active:bg-gray-100'}`}
             >
-              <span className={`flex items-center justify-center w-12 h-8 rounded-full transition-colors ${active ? 'bg-[#EEF2FF]' : ''}`}>
+              <span className={`flex items-center justify-center w-12 h-8 rounded-full transition-colors ${active ? 'bg-indigo-50' : ''}`}>
                 <Icon size={23} strokeWidth={active ? 2.2 : 1.8} />
               </span>
               <span className={`text-[11px] leading-none truncate max-w-full ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
@@ -139,7 +137,7 @@ export default function Sidebar() {
           onClick={() => setMoreOpen(true)}
           className={`flex flex-col items-center justify-center gap-1 h-14 rounded-2xl min-w-0 ${moreActive ? 'text-[#4F46E5]' : 'text-gray-500 active:bg-gray-100'}`}
         >
-          <span className={`flex items-center justify-center w-12 h-8 rounded-full ${moreActive ? 'bg-[#EEF2FF]' : ''}`}>
+          <span className={`flex items-center justify-center w-12 h-8 rounded-full ${moreActive ? 'bg-indigo-50' : ''}`}>
             <LayoutGrid size={23} strokeWidth={moreActive ? 2.2 : 1.8} />
           </span>
           <span className={`text-[11px] leading-none ${moreActive ? 'font-semibold' : 'font-medium'}`}>Ещё</span>
@@ -167,7 +165,7 @@ export default function Sidebar() {
                     key={href}
                     href={href}
                     onClick={() => setMoreOpen(false)}
-                    className={`flex flex-col items-center justify-center gap-2 h-[84px] rounded-2xl ${active ? 'bg-[#EEF2FF] text-[#4F46E5]' : 'bg-gray-50 text-gray-700 active:bg-gray-100'}`}
+                    className={`flex flex-col items-center justify-center gap-2 h-[84px] rounded-2xl ${active ? 'bg-indigo-50 text-[#4F46E5]' : 'bg-gray-50 text-gray-700 active:bg-gray-100'}`}
                   >
                     <Icon size={24} strokeWidth={1.9} />
                     <span className="text-[13px] font-medium">{label}</span>
