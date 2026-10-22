@@ -1074,17 +1074,17 @@ export default function IncomePage() {
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] border-collapse text-sm">
+              <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
-                    <th className="sticky left-0 z-20 bg-gray-100 border-b border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Машина</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Gross</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Claim</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Supplement</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">% выч.</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Вычет</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Ремонт</th>
-                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Прочее</th>
+                    <th className="sticky left-0 z-20 bg-gray-100 border-b border-r border-gray-200 px-4 py-2.5 w-[190px] text-left font-semibold">Машина</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[120px] text-right font-semibold">Gross</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold">Claim</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[120px] text-right font-semibold">Supplement</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[80px] text-right font-semibold">% выч.</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold">Вычет</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold">Ремонт</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[120px] text-right font-semibold">Прочее</th>
                     <th className="bg-gray-100 border-b border-gray-200 px-4 py-2.5 text-right font-semibold">Итог</th>
                   </tr>
                 </thead>
