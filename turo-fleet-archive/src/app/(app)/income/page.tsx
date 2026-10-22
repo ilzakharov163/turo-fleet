@@ -883,43 +883,73 @@ export default function IncomePage() {
             </button>
           )}
 
-          {/* Аккаунты */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-gray-900">Аккаунты</h2>
-              <span className="text-xs text-gray-400 tabular-nums">итого {money(sum.total.net)}</span>
+          {/* Аккаунты — таблица */}
+          <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3.5">
+              <h2 className="text-base font-bold text-gray-900">По аккаунтам</h2>
+              <span className="text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
             </div>
-            {positiveTotal > 0 && (
-              <div className="mb-3 flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
-                {sum.accs.filter(x => x.t.net > 0).map(x => (
-                  <div key={x.a.key} className={colorOf(x.a.key).dot} style={{ width: `${x.t.net / positiveTotal * 100}%` }} title={`${x.a.label}: ${money(x.t.net)}`} />
-                ))}
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {sum.accs.filter(x => x.cars > 0 || x.t.net !== 0).map(x => {
-                const col = colorOf(x.a.key)
-                const share = positiveTotal > 0 && x.t.net > 0 ? Math.round(x.t.net / positiveTotal * 100) : 0
-                return (
-                  <button key={x.a.key} onClick={() => setView(x.a.key)}
-                    className={`group text-left bg-white rounded-[18px] border border-gray-100/80 card-shadow p-4 transition-colors ${col.ring}`}>
-                    <div className="flex items-center gap-3">
-                      <span className={`w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-bold ${col.soft}`}>{x.a.label.slice(0, 1)}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 truncate">{x.a.label}</p>
-                        <p className="text-xs text-gray-400">{x.cars} {x.cars === 1 ? 'машина' : x.cars >= 2 && x.cars <= 4 ? 'машины' : 'машин'}{share ? ` · ${share}% дохода` : ''}</p>
-                      </div>
-                      <ChevronRight size={16} className="text-gray-300 group-hover:text-gray-500" />
-                    </div>
-                    <p className={`mt-3 text-2xl font-bold tracking-tight tabular-nums ${x.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(x.t.net)}</p>
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 tabular-nums">
-                      <span>Gross {money(x.t.gross)}</span>
-                      {(x.t.claim + x.t.supp) > 0 && <span>Клеймы {money(x.t.claim + x.t.supp - x.t.ded)}</span>}
-                      {(x.t.repair + x.t.other) > 0 && <span className="text-red-500">−{abs(x.t.repair + x.t.other)}</span>}
-                    </div>
-                  </button>
-                )
-              })}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[680px] border-collapse text-sm tabular-nums">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wide text-gray-500">
+                    <th className="sticky left-0 z-10 bg-gray-100 border-y border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Аккаунт</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Gross</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Клеймы <span className="normal-case font-normal">(после вычета)</span></th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Ремонт и прочее</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Итог</th>
+                    <th className="bg-gray-100 border-y border-gray-200 px-4 py-2.5 text-left font-semibold w-[170px]">Доля дохода</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sum.accs.filter(x => x.cars > 0 || x.t.net !== 0).map(x => {
+                    const share = positiveTotal > 0 && x.t.net > 0 ? x.t.net / positiveTotal * 100 : 0
+                    return (
+                      <tr key={x.a.key} onClick={() => setView(x.a.key)} className="group cursor-pointer">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-4 py-2.5">
+                          <span className="flex items-center gap-2">
+                            <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colorOf(x.a.key).dot}`} />
+                            <span className="font-semibold text-gray-900">{x.a.label}</span>
+                            <span className="text-xs text-gray-400">{x.cars} {x.cars === 1 ? 'машина' : x.cars >= 2 && x.cars <= 4 ? 'машины' : 'машин'}</span>
+                          </span>
+                        </td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.gross)}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.claim + x.t.supp - x.t.ded)}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{(x.t.repair + x.t.other) ? `−${abs(x.t.repair + x.t.other)}` : '—'}</td>
+                        <td className={`group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right font-bold ${x.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(x.t.net)}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-gray-200 px-4 py-2.5">
+                          <span className="flex items-center gap-2">
+                            <span className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100"><span className={`block h-full rounded-full ${colorOf(x.a.key).dot}`} style={{ width: `${share}%` }} /></span>
+                            <span className="w-9 text-right text-xs text-gray-500">{share ? `${Math.round(share)}%` : '—'}</span>
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold text-gray-800">
+                    <td className="sticky left-0 z-10 bg-gray-50 border-b border-r border-gray-200 px-4 py-2.5">Итого по аккаунтам</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.gross)}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.claim + sum.total.supp - sum.total.ded)}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">−{abs(sum.total.repair + sum.total.other)}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.net)}</td>
+                    <td className="bg-gray-50 border-b border-gray-200" />
+                  </tr>
+                  <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
+                    <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Расходы компании</td>
+                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">сотрудник {money(n(sum.exp?.salary1) + n(sum.exp?.salary2))} · {(sum.exp?.items || []).length} поз.</td>
+                    <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.expenses)}</td>
+                    <td className="border-b border-gray-200" />
+                  </tr>
+                  <tr className={profitUp ? 'bg-emerald-50' : 'bg-red-50'}>
+                    <td className={`sticky left-0 z-10 border-r border-gray-200 px-4 py-3 font-bold text-gray-900 ${profitUp ? 'bg-emerald-50' : 'bg-red-50'}`}>Чистая прибыль</td>
+                    <td colSpan={3} className="border-r border-gray-200" />
+                    <td className={`border-r border-gray-200 px-3 py-3 text-right text-base font-bold ${profitUp ? 'text-emerald-700' : 'text-red-600'}`}>{money(sum.profit)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
 
