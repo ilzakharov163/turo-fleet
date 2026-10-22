@@ -25,6 +25,7 @@ const SECTIONS: { href: string; label: string }[] = [
   { href: '/cars', label: 'Авто' },
   { href: '/calendar', label: 'Календарь' },
   { href: '/expenses', label: 'Расходы' },
+  { href: '/income', label: 'Доходы' },
   { href: '/claims', label: 'Клеймы' },
   { href: '/stickers', label: 'Наклейки' },
   { href: '/analytics', label: 'Аналитика' },
