@@ -153,9 +153,9 @@ export default function ReportsPage() {
     return dd ? isSameMonth(parseISO(dd), month) : false
   })
   const claimLine = (c: Claim, done = false) => {
+    if (done) return `• ${carName(c.car)} — завершён ${c.completed_date ? d(c.completed_date) : '—'}`
     const bits: string[] = []
     if (c.opened_date) bits.push(`открыт ${d(c.opened_date)}`)
-    if (done && c.completed_date) bits.push(`завершён ${d(c.completed_date)}`)
     bits.push(`Initial ${c.initial_payment_received ? '✓' : '✗'}`)
     bits.push(`Supplement ${c.supplement_paid ? '✓' : '✗'}`)
     return `• ${carName(c.car)} — ${bits.join(' · ')}`
