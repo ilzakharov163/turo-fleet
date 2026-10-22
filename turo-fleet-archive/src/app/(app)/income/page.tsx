@@ -437,7 +437,6 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
   const groups: string[] = []
   ;[...items].sort((a, b) => a.sort - b.sort).forEach(p => { if (!groups.includes(p.grp)) groups.push(p.grp) })
   const total = items.reduce((s, p) => s + n(p.amount), 0)
-  const paid = items.filter(p => p.paid).reduce((s, p) => s + n(p.amount), 0)
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
@@ -445,14 +444,13 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
           <div>
             <p className="text-sm text-gray-500">Платежи · {monthName(period)}</p>
             <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums mt-1">{money(total)}</p>
-            <p className="text-xs text-gray-400 mt-1">{items.length} платежей · оплачено {money(paid)} · осталось {money(total - paid)}</p>
+            <p className="text-xs text-gray-400 mt-1">{items.length} платежей · каждый месяц переносятся автоматически</p>
           </div>
           <form onSubmit={e => { e.preventDefault(); if (newGroup.trim()) { onAdd(newGroup.trim()); setNewGroup('') } }} className="flex gap-2">
             <input id="pay-new-group" value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="Новая группа (например, Карам)" className="w-56 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             <button type="submit" className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={15} /> Группа</button>
           </form>
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-100"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${total ? paid / total * 100 : 0}%` }} /></div>
       </div>
 
       {items.length === 0 && (
@@ -472,25 +470,21 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
               <span className="text-sm font-semibold tabular-nums text-gray-900">{money(sub)}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] table-fixed border-collapse text-sm">
+              <table className="w-full min-w-[440px] table-fixed border-collapse text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="w-[80px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-left font-semibold">Число</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-left font-semibold">Платёж</th>
                     <th className="w-[130px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-right font-semibold">Сумма</th>
-                    <th className="w-[100px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-center font-semibold">Оплачен</th>
                     <th className="w-[48px] bg-gray-100 border-y border-gray-200" />
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map(p => (
-                    <tr key={p.id} className={`group ${p.paid ? 'bg-emerald-50/40' : ''}`}>
+                    <tr key={p.id} className="group">
                       <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.day ? String(p.day) : ''} numeric placeholder="—" onCommit={v => onUpdate(p.id, { day: v ? Math.min(31, Math.max(1, Math.round(n(v)))) : null })} /></td>
                       <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.name} placeholder="Название" onCommit={v => onUpdate(p.id, { name: v })} /></td>
                       <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.amount ? String(p.amount) : ''} numeric placeholder="0" className="text-right font-semibold tabular-nums" onCommit={v => onUpdate(p.id, { amount: round2(n(v.replace(',', '.'))) })} /></td>
-                      <td className="border-b border-r border-gray-200 text-center">
-                        <button onClick={() => onUpdate(p.id, { paid: !p.paid })} className={`inline-flex h-6 min-w-[52px] items-center justify-center rounded-full px-2 text-xs font-semibold ${p.paid ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{p.paid ? 'да' : 'нет'}</button>
-                      </td>
                       <td className="border-b border-gray-200 text-center">
                         <button onClick={() => { if (confirm(`Удалить платёж «${p.name || 'без названия'}»?`)) onDelete(p.id) }} className="p-1.5 text-gray-300 hover:text-red-500" aria-label="Удалить платёж"><Trash2 size={15} /></button>
                       </td>
@@ -503,7 +497,7 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
           </div>
         )
       })}
-      <p className="text-xs text-gray-400">Нажмите на ячейку, чтобы изменить — сохраняется само. Платежи входят в расходы месяца и вычитаются из чистой прибыли. В новом месяце можно перенести список из прошлого одной кнопкой.</p>
+      <p className="text-xs text-gray-400">Нажмите на ячейку, чтобы изменить — сохраняется само. Платежи вычитаются из чистой прибыли месяца. В начале каждого месяца список переносится автоматически — меняйте только то, что изменилось.</p>
     </div>
   )
 }
@@ -552,6 +546,7 @@ export default function IncomePage() {
   const [entries, setEntries] = useState<Entry[]>([])
   const [monthExp, setMonthExp] = useState<MonthExp[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const carried = useRef(false)
   const [fleet, setFleet] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [archiveCount, setArchiveCount] = useState(0)
@@ -591,7 +586,17 @@ export default function IncomePage() {
     setAccounts((a.data as Account[]) || [])
     setRcars((c.data as RCar[]) || [])
     setEntries(((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair) })))
-    setPayments(((pay.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) })))
+    let payList = ((pay.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))
+    // Платежи переходят из месяца в месяц: если в текущем месяце их нет — копируем последний список
+    const nowP = pKey(new Date())
+    const lastP = payList.map(x => x.period).filter(p => p < nowP).sort().pop()
+    if (lastP && !payList.some(x => x.period === nowP) && !carried.current) {
+      carried.current = true
+      const src = payList.filter(x => x.period === lastP)
+      const ins = await supabase.from('revenue_payments').insert(src.map(x => ({ period: nowP, grp: x.grp, day: x.day, name: x.name, amount: x.amount, sort: x.sort }))).select('*')
+      if (!ins.error) payList = [...payList, ...((ins.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))]
+    }
+    setPayments(payList)
     setMonthExp(((m.data as MonthExp[]) || []).map(x => ({ ...x, salary1: n(x.salary1), salary2: n(x.salary2) })))
     setFleet((f.data as Car[]) || [])
     setBlocks((b.data as Block[]) || [])
@@ -989,12 +994,11 @@ export default function IncomePage() {
                   )}
                 </div>
               </div>
-              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-6 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-5 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
                 {[
                   { label: 'Gross', value: money(sum.total.gross), cls: 'text-gray-900' },
-                  { label: 'Клеймы', value: `+${abs(sum.total.claim + sum.total.supp)}`, cls: 'text-gray-900' },
-                  { label: 'Вычет Turo', value: `−${abs(sum.total.ded)}`, cls: 'text-gray-500' },
-                  { label: 'Ремонт и пр.', value: `−${abs(sum.total.repair + sum.total.other)}`, cls: 'text-gray-500' },
+                  { label: 'Клеймы (чистыми)', value: money(sum.total.claim + sum.total.supp - sum.total.ded - sum.total.repair), cls: 'text-gray-900' },
+                  { label: 'Прочее', value: sum.total.other ? `−${abs(sum.total.other)}` : '—', cls: 'text-gray-500' },
                   { label: 'Расходы', value: `−${abs(sum.expenses)}`, cls: 'text-gray-500', go: 'expenses' },
                   { label: 'Платежи', value: `−${abs(sum.pays)}`, cls: 'text-gray-500', go: 'payments' },
                 ].map(st => (
@@ -1011,14 +1015,6 @@ export default function IncomePage() {
             </div>
           </div>
 
-          {/* Напоминание про Gross */}
-          {period <= curPeriod && grossRows.length > 0 && grossFilled < grossRows.length && (
-            <button onClick={() => setView('gross')} className="flex w-full flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left hover:bg-amber-100/70">
-              <span className="text-sm text-amber-900">Gross за {monthName(period, 'LLLL').toLowerCase()} заполнен у <b>{grossFilled} из {grossRows.length}</b> машин</span>
-              <span className="text-sm font-semibold text-amber-800">Заполнить →</span>
-            </button>
-          )}
-
           {/* Аккаунты — таблица */}
           <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
             <div className="flex items-center justify-between px-4 sm:px-5 py-3.5">
@@ -1031,8 +1027,8 @@ export default function IncomePage() {
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="sticky left-0 z-10 bg-gray-100 border-y border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Аккаунт</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Gross</th>
-                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Клеймы <span className="normal-case font-normal">(после вычета)</span></th>
-                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Ремонт и прочее</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Клеймы <span className="normal-case font-normal">(после вычета и ремонта)</span></th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Прочее</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Итог</th>
                     <th className="bg-gray-100 border-y border-gray-200 px-4 py-2.5 text-left font-semibold w-[170px]">Доля дохода</th>
                   </tr>
@@ -1050,8 +1046,8 @@ export default function IncomePage() {
                           </span>
                         </td>
                         <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.gross)}</td>
-                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.claim + x.t.supp - x.t.ded)}</td>
-                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{(x.t.repair + x.t.other) ? `−${abs(x.t.repair + x.t.other)}` : '—'}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.claim + x.t.supp - x.t.ded - x.t.repair)}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{x.t.other ? `−${abs(x.t.other)}` : '—'}</td>
                         <td className={`group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right font-bold ${x.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(x.t.net)}</td>
                         <td className="group-hover:bg-indigo-50/60 border-b border-gray-200 px-4 py-2.5">
                           <span className="flex items-center gap-2">
@@ -1067,8 +1063,8 @@ export default function IncomePage() {
                   <tr className="font-semibold text-gray-800">
                     <td className="sticky left-0 z-10 bg-gray-50 border-b border-r border-gray-200 px-4 py-2.5">Итого по аккаунтам</td>
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.gross)}</td>
-                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.claim + sum.total.supp - sum.total.ded)}</td>
-                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">−{abs(sum.total.repair + sum.total.other)}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.claim + sum.total.supp - sum.total.ded - sum.total.repair)}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{sum.total.other ? `−${abs(sum.total.other)}` : '—'}</td>
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.net)}</td>
                     <td className="bg-gray-50 border-b border-gray-200" />
                   </tr>
