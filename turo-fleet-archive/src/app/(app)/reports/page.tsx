@@ -154,11 +154,12 @@ export default function ReportsPage() {
   })
   const claimLine = (c: Claim, done = false) => {
     if (done) return `• ${carName(c.car)} — завершён ${c.completed_date ? d(c.completed_date) : '—'}`
-    const bits: string[] = []
-    if (c.opened_date) bits.push(`открыт ${d(c.opened_date)}`)
-    bits.push(`Initial ${c.initial_payment_received ? '✓' : '✗'}`)
-    bits.push(`Supplement ${c.supplement_paid ? '✓' : '✗'}`)
-    return `• ${carName(c.car)} — ${bits.join(' · ')}`
+    const yn = (v: boolean) => (v ? 'да' : 'нет')
+    return [
+      `• ${carName(c.car)}${c.opened_date ? ` (открыт ${d(c.opened_date)})` : ''}`,
+      `    Initial получен: ${yn(c.initial_payment_received)}`,
+      `    Supplement получен: ${yn(c.supplement_paid)}`,
+    ].join('\n')
   }
   const claimsText = [
     `🛠 Клеймы на ${todayLabel}`,
