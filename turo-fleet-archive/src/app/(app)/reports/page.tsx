@@ -102,13 +102,13 @@ export default function ReportsPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [claims, setClaims] = useState<Claim[]>([])
-  const [rev, setRev] = useState<{ accs: RevAcc[]; cars: RevCar[]; entries: RevEntry[]; exp: RevExp[] }>({ accs: [], cars: [], entries: [], exp: [] })
+  const [rev, setRev] = useState<{ accs: RevAcc[]; cars: RevCar[]; entries: RevEntry[]; exp: RevExp[]; pays: { period: string; amount: number }[] }>({ accs: [], cars: [], entries: [], exp: [], pays: [] })
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [copied, setCopied] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [carsRes, blocksRes, claimsRes, raRes, rcRes, reRes, rxRes] = await Promise.all([
+    const [carsRes, blocksRes, claimsRes, raRes, rcRes, reRes, rxRes, rpRes] = await Promise.all([
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date, reason'),
       supabase.from('claims').select('*, car:cars(make,model,plate)').order('opened_date', { ascending: true }),
@@ -116,11 +116,12 @@ export default function ReportsPage() {
       supabase.from('revenue_cars').select('id, account, name, added_from, sold_from').order('sort'),
       supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items'),
       supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
+      supabase.from('revenue_payments').select('period, amount'),
     ])
     setCars(carsRes.data || [])
     setBlocks((blocksRes.data as Block[]) || [])
     setClaims((claimsRes.data as Claim[]) || [])
-    setRev({ accs: (raRes.data as RevAcc[]) || [], cars: (rcRes.data as RevCar[]) || [], entries: (reRes.data as RevEntry[]) || [], exp: (rxRes.data as RevExp[]) || [] })
+    setRev({ accs: (raRes.data as RevAcc[]) || [], cars: (rcRes.data as RevCar[]) || [], entries: (reRes.data as RevEntry[]) || [], exp: (rxRes.data as RevExp[]) || [], pays: (rpRes.data as { period: string; amount: number }[]) || [] })
     setLoading(false)
   }, [])
 
@@ -242,7 +243,8 @@ export default function ReportsPage() {
   const revExpTotal = num(revExp?.salary1) + num(revExp?.salary2) + (revExp?.items || []).reduce((s, i) => s + num(i.amount), 0)
   const revGross = revRows.reduce((s, x) => s + x.gross, 0)
   const revTotal = revRows.reduce((s, x) => s + x.net, 0)
-  const revProfit = revTotal - revExpTotal
+  const revPays = rev.pays.filter(x => x.period === revP).reduce((s, x) => s + num(x.amount), 0)
+  const revProfit = revTotal - revExpTotal - revPays
   const incomeText = [
     `💰 Доходы за ${monthLabel}`,
     '',
@@ -251,6 +253,7 @@ export default function ReportsPage() {
     `Gross: ${usd(revGross)}`,
     `Итого по аккаунтам: ${usd(revTotal)}`,
     `Расходы компании: −${usd(Math.abs(revExpTotal))}`,
+    `Платежи: −${usd(Math.abs(revPays))}`,
     '',
     `${revProfit >= 0 ? '✅' : '🔻'} Чистая прибыль: ${usd(revProfit)}`,
   ].join('\n')
@@ -260,6 +263,7 @@ export default function ReportsPage() {
     [],
     ['Итого по аккаунтам', '', Math.round(revGross * 100) / 100, Math.round(revTotal * 100) / 100],
     ['Расходы компании', '', '', Math.round(revExpTotal * 100) / 100],
+    ['Платежи', '', '', Math.round(revPays * 100) / 100],
     ['Чистая прибыль', '', '', Math.round(revProfit * 100) / 100],
   ]
 
