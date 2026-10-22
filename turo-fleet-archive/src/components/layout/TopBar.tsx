@@ -7,16 +7,11 @@ import { createClient } from '@/lib/supabase'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Дашборд',
-  '/cars': 'Автомобили',
+  '/cars': 'Авто',
   '/expenses': 'Расходы',
   '/income': 'Доходы',
-  '/analytics': 'Аналитика',
-  '/claims': 'Клеймы и ремонт',
-  '/stickers': 'Наклейки',
   '/reports': 'Отчёты',
-  '/team': 'Команда',
-  '/log': 'История действий',
-  '/settings': 'Личный кабинет',
+  '/settings': 'Настройки',
 }
 
 const roleLabels: Record<string, string> = {

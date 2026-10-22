@@ -151,14 +151,14 @@ export default function DashboardPage() {
       const soon = stickerRows.filter(r => r.left > 0 && r.left <= STICKER_WARN).sort((a, b) => a.left - b.left)
       if (due.length) {
         items.push({
-          key: 'stickers-due', href: '/stickers', tone: 'red', icon: Tag,
+          key: 'stickers-due', href: '/cars?tab=stickers', tone: 'red', icon: Tag,
           title: `Наклейки: пора менять — ${due.length}`,
           detail: due.slice(0, 3).map(r => plate(r.car)).join(', ') + (due.length > 3 ? ` и ещё ${due.length - 3}` : ''),
         })
       }
       if (soon.length) {
         items.push({
-          key: 'stickers-soon', href: '/stickers', tone: 'yellow', icon: Tag,
+          key: 'stickers-soon', href: '/cars?tab=stickers', tone: 'yellow', icon: Tag,
           title: `Наклейки: скоро менять — ${soon.length}`,
           detail: `Ближайшая через ${soon[0].left} дн. · ${plate(soon[0].car)}`,
         })
@@ -168,10 +168,10 @@ export default function DashboardPage() {
       const waiting = claims.filter(c => c.status === 'waiting').length
       const inRepair = claims.filter(c => c.status === 'in_repair').length
       if (waiting) {
-        items.push({ key: 'claims-wait', href: '/claims', tone: 'yellow', icon: ShieldAlert, title: `Клеймы ждут ремонта — ${waiting}`, detail: 'Нужно отправить в ремонт' })
+        items.push({ key: 'claims-wait', href: '/cars?tab=claims', tone: 'yellow', icon: ShieldAlert, title: `Клеймы ждут ремонта — ${waiting}`, detail: 'Нужно отправить в ремонт' })
       }
       if (inRepair) {
-        items.push({ key: 'claims-repair', href: '/claims', tone: 'blue', icon: Wrench, title: `В ремонте — ${inRepair}`, detail: 'Проверь статус у мастера' })
+        items.push({ key: 'claims-repair', href: '/cars?tab=claims', tone: 'blue', icon: Wrench, title: `В ремонте — ${inRepair}`, detail: 'Проверь статус у мастера' })
       }
       if (unpaidSum > 0) {
         items.push({
@@ -284,8 +284,8 @@ export default function DashboardPage() {
   const quickActions = [
     { label: 'Добавить расход', href: '/expenses', icon: Plus },
     { label: 'Отметить простой', href: '/cars?tab=downtime', icon: CalendarDays },
-    { label: 'Новый клейм', href: '/claims', icon: ShieldAlert },
-    { label: 'Наклейки', href: '/stickers', icon: Tag },
+    { label: 'Новый клейм', href: '/cars?tab=claims', icon: ShieldAlert },
+    { label: 'Наклейки', href: '/cars?tab=stickers', icon: Tag },
     { label: 'Отчёты в Telegram', href: '/reports', icon: FileText },
   ]
 

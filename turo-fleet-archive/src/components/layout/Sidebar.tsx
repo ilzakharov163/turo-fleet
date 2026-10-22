@@ -3,22 +3,20 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Car, DollarSign, BarChart2, Users, ClipboardList, LogOut, ShieldAlert, Tag, FileText, Wallet, LayoutGrid, X } from 'lucide-react'
+import { LayoutDashboard, Car, DollarSign, LogOut, FileText, Wallet, LayoutGrid, X, Settings } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
+import { canAny, useAccess } from '@/lib/access'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/ui/Logo'
 
+// access — галочки из «Команды», дающие доступ к разделу (хотя бы одна); [] — всем
 const nav = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд', adminOnly: true },
-  { href: '/cars', icon: Car, label: 'Авто', adminOnly: true },
-  { href: '/expenses', icon: DollarSign, label: 'Расходы', adminOnly: false },
-  { href: '/income', icon: Wallet, label: 'Доходы', adminOnly: true },
-  { href: '/claims', icon: ShieldAlert, label: 'Клеймы', adminOnly: true },
-  { href: '/stickers', icon: Tag, label: 'Наклейки', adminOnly: true },
-  { href: '/analytics', icon: BarChart2, label: 'Аналитика', adminOnly: true },
-  { href: '/team', icon: Users, label: 'Команда', adminOnly: true },
-  { href: '/log', icon: ClipboardList, label: 'История', adminOnly: true },
-  { href: '/reports', icon: FileText, label: 'Отчёты', adminOnly: true },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Дашборд', access: ['/dashboard'] },
+  { href: '/cars', icon: Car, label: 'Авто', access: ['/cars', '/claims', '/stickers'] },
+  { href: '/expenses', icon: DollarSign, label: 'Расходы', access: ['/expenses'] },
+  { href: '/income', icon: Wallet, label: 'Доходы', access: ['/income'] },
+  { href: '/reports', icon: FileText, label: 'Отчёты', access: ['/reports', '/analytics'] },
+  { href: '/settings', icon: Settings, label: 'Настройки', access: [] as string[] },
 ]
 
 // Нижнее меню на телефоне: 4 главных раздела, остальные — в «Ещё»
@@ -27,28 +25,18 @@ const MOBILE_MAIN = ['/dashboard', '/cars', '/expenses', '/income']
 export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
-  const [access, setAccess] = useState<{ role: string; perms: string[] } | null>(null)
+  const access = useAccess()
   const [moreOpen, setMoreOpen] = useState(false)
 
+  // Сотрудник/партнёр видит только разрешённые разделы
   useEffect(() => {
-    async function loadRole() {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase.from('profiles').select('role, permissions').eq('id', user.id).single()
-      const role = (data?.role ?? 'admin') as string
-      let perms: string[] = (data?.permissions as string[] | null) ?? []
-      if (role !== 'admin' && perms.length === 0) perms = ['/expenses']
-      if (perms.includes('/calendar') && !perms.includes('/cars')) perms = [...perms, '/cars']
-      setAccess({ role, perms })
-      // Сотрудник/партнёр видит только разрешённые разделы
-      if (role !== 'admin') {
-        const allowed = pathname === '/settings' || perms.some(p => pathname === p || pathname.startsWith(p + '/'))
-        if (!allowed) router.replace(perms[0] || '/settings')
-      }
+    if (!access || access.role === 'admin') return
+    const item = nav.find(n => pathname === n.href || pathname.startsWith(n.href + '/'))
+    if (!item || !canAny(access, item.access)) {
+      const first = nav.find(n => n.access.length > 0 && canAny(access, n.access))
+      router.replace(first?.href || '/settings')
     }
-    loadRole()
-  }, [pathname, router])
+  }, [access, pathname, router])
 
   async function handleLogout() {
     const supabase = createClient()
@@ -56,7 +44,7 @@ export default function Sidebar() {
     router.push('/login')
   }
 
-  const visibleNav = !access || access.role === 'admin' ? nav : nav.filter(n => access.perms.includes(n.href))
+  const visibleNav = !access ? nav : nav.filter(n => canAny(access, n.access))
   const preferred = visibleNav.filter(n => MOBILE_MAIN.includes(n.href))
   const mobileMain = [...preferred, ...visibleNav.filter(n => !MOBILE_MAIN.includes(n.href))].slice(0, 4)
   const mobileMore = visibleNav.filter(n => !mobileMain.includes(n))
