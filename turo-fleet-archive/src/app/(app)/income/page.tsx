@@ -347,7 +347,7 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
         <div>
           <p className="text-sm text-gray-500">Расходы компании · {monthName(period)}</p>
           <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums mt-1">{money(total)}</p>
-          <p className="text-xs text-gray-400 mt-1">зарплаты {money(draft.salary1 + draft.salary2)} · {draft.items.length} поз. на {money(itemsTotal)}</p>
+          <p className="text-xs text-gray-400 mt-1">на сотрудника {money(draft.salary1 + draft.salary2)} · {draft.items.length} поз. на {money(itemsTotal)}</p>
         </div>
         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${status === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>
           {status === 'saving' ? 'Сохраняю…' : status === 'saved' ? <><Check size={14} /> Сохранено</> : 'Изменения сохраняются автоматически'}
@@ -356,19 +356,22 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5 space-y-4">
-          <h3 className="text-base font-bold text-gray-900">Зарплаты</h3>
+          <div>
+            <h3 className="text-base font-bold text-gray-900">Затраты на сотрудника</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Зарплату вносите в конце месяца</p>
+          </div>
           <label className="block">
-            <span className="block text-xs font-medium text-gray-500 mb-1.5">Зарплата 1</span>
+            <span className="block text-xs font-medium text-gray-500 mb-1.5">Расходы</span>
             <MoneyInput id="exp-salary1" value={s1} onChange={setS1} big />
           </label>
           <label className="block">
-            <span className="block text-xs font-medium text-gray-500 mb-1.5">Зарплата 2</span>
+            <span className="block text-xs font-medium text-gray-500 mb-1.5">Зарплата</span>
             <MoneyInput id="exp-salary2" value={s2} onChange={setS2} big />
           </label>
           {payroll > 0 && (
             <div className="rounded-2xl bg-indigo-50 p-3 text-sm">
               <p className="text-indigo-900">По календарю простоев работнику положено <b>{money(payroll)}</b></p>
-              <button type="button" onClick={() => setS2(String(payroll))} className="mt-1.5 text-xs font-semibold text-indigo-700 hover:underline">Подставить в «Зарплата 2»</button>
+              <button type="button" onClick={() => setS2(String(payroll))} className="mt-1.5 text-xs font-semibold text-indigo-700 hover:underline">Подставить в «Зарплата»</button>
             </div>
           )}
         </div>
@@ -416,6 +419,7 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
   pct?: boolean; placeholder?: string; strong?: boolean; boxed?: boolean
 }) {
   const shown = (x: number) => (x ? String(pct ? round2(x * 100) : round2(x)) : '')
+  const pretty = (x: number) => (x ? (pct ? String(round2(x * 100)) : round2(x).toLocaleString('en-US', { maximumFractionDigits: 2 })) : '')
   const [v, setV] = useState(shown(value))
   const [focused, setFocused] = useState(false)
   const skip = useRef(false)
@@ -431,8 +435,8 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
     if (el) { el.focus(); el.select() } else target.blur()
   }
   return (
-    <input data-grid={grid} data-row={row} data-col={col} inputMode="decimal" enterKeyHint="next" value={v} placeholder={placeholder}
-      onFocus={e => { setFocused(true); e.target.select() }}
+    <input data-grid={grid} data-row={row} data-col={col} inputMode="decimal" enterKeyHint="next" value={focused ? v : pretty(value)} placeholder={placeholder}
+      onFocus={e => { setV(shown(value)); setFocused(true); const t = e.target; requestAnimationFrame(() => t.select()) }}
       onBlur={() => { setFocused(false); if (skip.current) { skip.current = false; setV(shown(value)); return } commit() }}
       onChange={e => setV(e.target.value)}
       onKeyDown={e => {
@@ -441,7 +445,7 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
         else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1, t) }
         else if (e.key === 'Escape') { skip.current = true; t.blur() }
       }}
-      className={`w-full min-w-0 text-right tabular-nums text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-md bg-transparent px-2 py-2 hover:bg-indigo-50/70'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
+      className={`w-full min-w-0 text-right tabular-nums text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-none bg-transparent px-3 py-2.5 hover:bg-indigo-50 focus:relative focus:z-10'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
   )
 }
 
@@ -689,7 +693,7 @@ export default function IncomePage() {
   }
   const carHeader: Cell[] = ['Месяц', 'Аккаунт', 'Машина', 'Номер', 'Gross', 'Claim', 'Supplement', 'Вычет', 'Ремонт', 'Прочее', 'Прочее (что)', 'Итог']
   function exportMonth() {
-    const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Расходы компании'], ['Зарплата 1', n(sum.exp?.salary1)], ['Зарплата 2', n(sum.exp?.salary2)]]
+    const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Расходы компании'], ['Сотрудник: расходы', n(sum.exp?.salary1)], ['Сотрудник: зарплата', n(sum.exp?.salary2)]]
     for (const i of sum.exp?.items || []) rows.push([i.desc, n(i.amount)])
     rows.push([], ['Итого по аккаунтам', round2(sum.total.net)], ['Расходы компании', round2(sum.expenses)], ['Чистая прибыль', round2(sum.profit)])
     downloadFile(toCsv(rows), `dohody-${format(month, 'yyyy-MM')}.csv`, 'text/csv;charset=utf-8')
@@ -703,8 +707,8 @@ export default function IncomePage() {
     ms.forEach(s => rows.push(...carRows(s.p)))
     rows.push([], ['Расходы компании по месяцам'], ['Месяц', 'Статья', 'Сумма'])
     ms.forEach(s => {
-      if (n(s.exp?.salary1)) rows.push([monthName(s.p), 'Зарплата 1', n(s.exp?.salary1)])
-      if (n(s.exp?.salary2)) rows.push([monthName(s.p), 'Зарплата 2', n(s.exp?.salary2)])
+      if (n(s.exp?.salary1)) rows.push([monthName(s.p), 'Сотрудник: расходы', n(s.exp?.salary1)])
+      if (n(s.exp?.salary2)) rows.push([monthName(s.p), 'Сотрудник: зарплата', n(s.exp?.salary2)])
       for (const i of s.exp?.items || []) rows.push([monthName(s.p), i.desc, n(i.amount)])
     })
     downloadFile(toCsv(rows), `dohody-vse-mesyacy-${format(new Date(), 'yyyy-MM-dd')}.csv`, 'text/csv;charset=utf-8')
@@ -836,41 +840,48 @@ export default function IncomePage() {
         </div>
       ) : view === 'summary' ? (
         <>
-          {/* Главная карточка */}
-          <div className={`relative overflow-hidden rounded-[22px] p-5 sm:p-6 text-white ${profitUp ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-red-600'}`}>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-sm text-white/80">Чистая прибыль · {monthName(period)}</p>
-                <p className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums mt-1">{money(sum.profit)}</p>
-                {delta !== null && (
-                  <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium">
-                    {delta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                    {delta >= 0 ? '+' : '−'}{abs(delta)} к прошлому месяцу
-                  </p>
-                )}
+          {/* Главная строка */}
+          <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 p-4 sm:px-5">
+              <div className="min-w-[170px]">
+                <p className="text-xs font-medium text-gray-500">Чистая прибыль · {monthName(period)}</p>
+                <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
+                  <span className={`text-2xl font-bold tracking-tight tabular-nums ${profitUp ? 'text-emerald-600' : 'text-red-600'}`}>{money(sum.profit)}</span>
+                  {delta !== null && (
+                    <span className={`inline-flex items-center gap-0.5 text-xs font-medium tabular-nums ${delta >= 0 ? 'text-emerald-600' : 'text-red-500'}`} title="К прошлому месяцу">
+                      {delta >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{abs(delta)}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex gap-2">
-                <button onClick={shareReport} className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25"><Send size={15} /> Telegram</button>
-                <button onClick={async () => { if (await copyText(reportText)) flash('Текст скопирован') }} className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3 py-2 text-sm font-medium hover:bg-white/25" aria-label="Копировать текст"><Copy size={15} /></button>
+              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-5 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+                {[
+                  { label: 'Gross', value: money(sum.total.gross), cls: 'text-gray-900' },
+                  { label: 'Клеймы', value: `+${abs(sum.total.claim + sum.total.supp)}`, cls: 'text-gray-900' },
+                  { label: 'Вычет Turo', value: `−${abs(sum.total.ded)}`, cls: 'text-gray-500' },
+                  { label: 'Ремонт и пр.', value: `−${abs(sum.total.repair + sum.total.other)}`, cls: 'text-gray-500' },
+                  { label: 'Расходы', value: `−${abs(sum.expenses)}`, cls: 'text-gray-500', go: 'expenses' },
+                ].map(st => (
+                  <button key={st.label} onClick={() => st.go && setView(st.go)} disabled={!st.go} className={`text-left ${st.go ? 'hover:opacity-70' : 'cursor-default'}`}>
+                    <span className="block text-[11px] uppercase tracking-wide text-gray-400">{st.label}</span>
+                    <span className={`block text-sm font-semibold tabular-nums ${st.cls}`}>{st.value}</span>
+                  </button>
+                ))}
               </div>
-            </div>
-            {/* Из чего складывается */}
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {[
-                { label: 'Gross', value: sum.total.gross, sign: '' },
-                { label: 'Клеймы', value: sum.total.claim + sum.total.supp, sign: '+' },
-                { label: 'Вычет Turo', value: sum.total.ded, sign: '−' },
-                { label: 'Ремонт и прочее', value: sum.total.repair + sum.total.other, sign: '−' },
-                { label: 'Расходы компании', value: sum.expenses, sign: '−', go: 'expenses' },
-              ].map(s => (
-                <button key={s.label} onClick={() => s.go && setView(s.go)} disabled={!s.go}
-                  className={`rounded-2xl bg-black/10 px-3 py-2.5 text-left ${s.go ? 'hover:bg-black/20 cursor-pointer' : 'cursor-default'}`}>
-                  <span className="block text-[11px] uppercase tracking-wide text-white/70">{s.label}</span>
-                  <span className="block text-base font-semibold tabular-nums">{s.sign}{abs(s.value)}</span>
-                </button>
-              ))}
+              <div className="ml-auto flex gap-1.5">
+                <button onClick={shareReport} className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Send size={15} className="text-[#229ED9]" /> Telegram</button>
+                <button onClick={async () => { if (await copyText(reportText)) flash('Текст скопирован') }} className="inline-flex items-center rounded-xl border border-gray-200 px-2.5 py-2 text-gray-500 hover:bg-gray-50" aria-label="Копировать текст"><Copy size={15} /></button>
+              </div>
             </div>
           </div>
+
+          {/* Напоминание про Gross */}
+          {period <= curPeriod && grossRows.length > 0 && grossFilled < grossRows.length && (
+            <button onClick={() => setView('gross')} className="flex w-full flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left hover:bg-amber-100/70">
+              <span className="text-sm text-amber-900">Gross за {monthName(period, 'LLLL').toLowerCase()} заполнен у <b>{grossFilled} из {grossRows.length}</b> машин</span>
+              <span className="text-sm font-semibold text-amber-800">Заполнить →</span>
+            </button>
+          )}
 
           {/* Аккаунты */}
           <div>
@@ -1063,18 +1074,18 @@ export default function IncomePage() {
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-sm">
+              <table className="w-full min-w-[880px] border-collapse text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
-                    <th className="sticky left-0 z-10 bg-gray-50 px-4 py-2.5 text-left font-semibold">Машина</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Gross</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Claim</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Supplement</th>
-                    <th className="px-2 py-2.5 text-right font-semibold w-20">% выч.</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Вычет</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Ремонт</th>
-                    <th className="px-2 py-2.5 text-right font-semibold">Прочее</th>
-                    <th className="px-4 py-2.5 text-right font-semibold">Итог</th>
+                  <tr className="text-[11px] uppercase tracking-wide text-gray-500">
+                    <th className="sticky left-0 z-20 bg-gray-100 border-b border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Машина</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Gross</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Claim</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Supplement</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">% выч.</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Вычет</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Ремонт</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Прочее</th>
+                    <th className="bg-gray-100 border-b border-gray-200 px-4 py-2.5 text-right font-semibold">Итог</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1084,57 +1095,59 @@ export default function IncomePage() {
                     const items = e?.claim_items || []
                     const first = items[0]
                     const grid = `acc-${activeAcc.a.key}`
+                    const cell = 'border-b border-r border-gray-200 p-0 bg-white group-hover:bg-indigo-50/40 group-focus-within:bg-indigo-50/60'
+                    const calcCell = 'border-b border-r border-gray-200 px-3 py-2.5 text-right tabular-nums bg-gray-50 group-focus-within:bg-indigo-50/60'
                     return (
-                      <tr key={c.id} className="group border-t border-gray-100">
-                        <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1">
+                      <tr key={c.id} className="group">
+                        <td className="sticky left-0 z-10 border-b border-r border-gray-200 bg-white group-hover:bg-indigo-50/40 group-focus-within:bg-indigo-50 px-4 py-1.5">
                           <button onClick={() => setDrawer(c.id)} className="text-left" title="Подробнее: несколько клеймов, прочие расходы, история">
                             <span className="block font-medium text-gray-900 hover:text-indigo-600">{c.name}</span>
                             <span className="block text-[11px] text-gray-400">{c.car?.plate || 'не привязана'}</span>
                           </button>
                         </td>
-                        <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={0} value={n(e?.gross)} strong onCommit={v => patchEntry(c.id, x => ({ ...x, gross: v }))} /></td>
+                        <td className={`${cell} w-[120px]`}><NumCell grid={grid} row={ri} col={0} value={n(e?.gross)} strong onCommit={v => patchEntry(c.id, x => ({ ...x, gross: v }))} /></td>
                         {items.length > 1 ? (
-                          <td colSpan={3} className="px-2 py-1 group-hover:bg-gray-50">
-                            <button onClick={() => setDrawer(c.id)} className="w-full rounded-md px-2 py-2 text-right text-indigo-700 hover:bg-indigo-50">
+                          <td colSpan={3} className={cell}>
+                            <button onClick={() => setDrawer(c.id)} className="w-full px-3 py-2.5 text-right text-indigo-700 hover:bg-indigo-50">
                               {items.length} клейма · {money(t.claim)} / {money(t.supp)}
                             </button>
                           </td>
                         ) : (
                           <>
-                            <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={1} value={n(first?.claim)} onCommit={v => setClaimField(c.id, 'claim', v)} /></td>
-                            <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={2} value={n(first?.supplement)} onCommit={v => setClaimField(c.id, 'supplement', v)} /></td>
-                            <td className="px-1 py-1 w-20 group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={3} value={n(first?.pct)} pct placeholder={first ? '0' : '20'} onCommit={v => setClaimField(c.id, 'pct', v)} /></td>
+                            <td className={`${cell} w-[120px]`}><NumCell grid={grid} row={ri} col={1} value={n(first?.claim)} onCommit={v => setClaimField(c.id, 'claim', v)} /></td>
+                            <td className={`${cell} w-[120px]`}><NumCell grid={grid} row={ri} col={2} value={n(first?.supplement)} onCommit={v => setClaimField(c.id, 'supplement', v)} /></td>
+                            <td className={`${cell} w-[80px]`}><NumCell grid={grid} row={ri} col={3} value={n(first?.pct)} pct placeholder={first ? '0' : '20'} onCommit={v => setClaimField(c.id, 'pct', v)} /></td>
                           </>
                         )}
-                        <td className="px-2 py-1 text-right tabular-nums text-gray-400 group-hover:bg-gray-50">{t.ded ? `−${abs(t.ded)}` : ''}</td>
-                        <td className="px-1 py-1 w-[100px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={4} value={n(e?.repair)} onCommit={v => patchEntry(c.id, x => ({ ...x, repair: v }))} /></td>
-                        <td className="px-1 py-1 group-hover:bg-gray-50">
-                          <button onClick={() => setDrawer(c.id)} className={`w-full rounded-md px-2 py-2 text-right tabular-nums hover:bg-indigo-50 ${t.other ? 'text-red-600' : 'text-gray-300'}`} title={(e?.other_items || []).map(o => `${o.desc}: ${o.amount}`).join('\n') || 'Добавить расход'}>
-                            {t.other ? `−${abs(t.other)}` : '+'}
+                        <td className={`${calcCell} text-gray-500`}>{t.ded ? `−${abs(t.ded)}` : ''}</td>
+                        <td className={`${cell} w-[110px]`}><NumCell grid={grid} row={ri} col={4} value={n(e?.repair)} onCommit={v => patchEntry(c.id, x => ({ ...x, repair: v }))} /></td>
+                        <td className={cell}>
+                          <button onClick={() => setDrawer(c.id)} className={`w-full px-3 py-2.5 text-right tabular-nums hover:bg-indigo-50 ${t.other ? 'text-red-600' : 'text-gray-300'}`} title={(e?.other_items || []).map(o => `${o.desc}: ${o.amount}`).join('\n') || 'Добавить расход'}>
+                            {t.other ? `−${abs(t.other)}` : '+ добавить'}
                           </button>
                         </td>
-                        <td className={`px-4 py-1 text-right font-bold tabular-nums group-hover:bg-gray-50 ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</td>
+                        <td className={`border-b border-gray-200 px-4 py-2.5 text-right font-bold tabular-nums bg-gray-50 group-focus-within:bg-indigo-50/60 ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</td>
                       </tr>
                     )
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold tabular-nums text-gray-700">
-                    <td className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left">Итого</td>
-                    <td className="px-3 py-3 text-right">{money(activeAcc.t.gross)}</td>
-                    <td className="px-3 py-3 text-right">{money(activeAcc.t.claim)}</td>
-                    <td className="px-3 py-3 text-right">{money(activeAcc.t.supp)}</td>
-                    <td />
-                    <td className="px-2 py-3 text-right text-gray-500">−{abs(activeAcc.t.ded)}</td>
-                    <td className="px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.repair)}</td>
-                    <td className="px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.other)}</td>
-                    <td className={`px-4 py-3 text-right text-base font-bold ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</td>
+                  <tr className="font-semibold tabular-nums text-gray-800">
+                    <td className="sticky left-0 z-10 bg-gray-100 border-r border-gray-200 px-4 py-3 text-left">Итого</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right">{money(activeAcc.t.gross)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right">{money(activeAcc.t.claim)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right">{money(activeAcc.t.supp)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200" />
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.ded)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.repair)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.other)}</td>
+                    <td className={`bg-gray-100 px-4 py-3 text-right text-base font-bold ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           )}
-          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Нажмите на ячейку и пишите цифру — сохраняется само. Enter — следующая строка. Несколько клеймов, прочие расходы и история машины — нажмите на её название.</p>
+          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Белые ячейки можно редактировать — нажмите и пишите цифру, сохраняется само. Enter — следующая строка, Tab — следующая колонка. Серые считаются автоматически. Несколько клеймов, прочие расходы и история — нажмите на название машины.</p>
         </div>
       ) : null}
 
