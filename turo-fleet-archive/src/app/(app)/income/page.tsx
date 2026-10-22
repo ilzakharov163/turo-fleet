@@ -277,7 +277,8 @@ export default function IncomePage() {
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [a, c, e, m, f, b] = await Promise.all([
+    // Иногда первый запрос уходит до обновления сессии — повторяем, чтобы не показать пустые расходы
+    const fetchAll = () => Promise.all([
       supabase.from('revenue_accounts').select('*').order('sort'),
       supabase.from('revenue_cars').select('*, car:cars(make,model,plate)').order('sort'),
       supabase.from('revenue_entries').select('id, revenue_car_id, period, gross, repair, claim_items, other_items'),
@@ -285,6 +286,12 @@ export default function IncomePage() {
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date'),
     ])
+    let res = await fetchAll()
+    for (let i = 0; i < 2 && res.some(r => r.error); i++) {
+      await new Promise(r => setTimeout(r, 700))
+      res = await fetchAll()
+    }
+    const [a, c, e, m, f, b] = res
     setAccounts((a.data as Account[]) || [])
     setRcars((c.data as RCar[]) || [])
     setEntries(((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair) })))
