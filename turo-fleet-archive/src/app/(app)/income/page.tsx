@@ -70,7 +70,7 @@ const abs = (v: number) => money(Math.abs(v))
 const carVisible = (c: RCar, p: string) => c.added_from <= p && (!c.sold_from || p < c.sold_from)
 const accActive = (a: Account, p: string) => a.active_from <= p && (!a.active_until || p <= a.active_until)
 const pKey = (d: Date) => format(d, 'yyyy-MM-01')
-const monthName = (p: string, f = 'LLLL yyyy') => format(parseISO(p), f, { locale: ru })
+const monthName = (p: string, f = 'LLLL yyyy') => { const t = format(parseISO(p), f, { locale: ru }); return t.charAt(0).toUpperCase() + t.slice(1) }
 
 function calcSalary(inactive: number, total: number) {
   if (inactive >= total) return 0
@@ -172,7 +172,7 @@ function CarDrawer({
               <h2 className="text-lg font-bold text-gray-900 truncate">{rcar.name}</h2>
               {rcar.car && <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 rounded-md px-1.5 py-0.5">{rcar.car.plate}</span>}
             </div>
-            <p className="text-xs text-gray-500 capitalize">{accLabel} · {monthName(period)}</p>
+            <p className="text-xs text-gray-500">{accLabel} · {monthName(period)}</p>
           </div>
           <button onClick={onClose} className="p-2 -mr-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Закрыть"><X size={18} /></button>
         </div>
@@ -181,14 +181,14 @@ function CarDrawer({
           {/* История */}
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Итог по месяцам</p>
-            <div className="flex items-end gap-2 h-16">
+            <div className="flex items-end gap-2">
               {history.map(h => (
                 <div key={h.p} className="flex-1 flex flex-col items-center gap-1 min-w-0" title={`${monthName(h.p)}: ${h.has ? money(h.net) : 'нет данных'}`}>
-                  <div className="w-full flex-1 flex items-end">
+                  <div className="w-full h-12 flex items-end">
                     <div className={`w-full rounded-md ${!h.has ? 'bg-gray-100' : h.net < 0 ? 'bg-red-400' : h.p === period ? 'bg-indigo-500' : 'bg-indigo-200'}`}
                       style={{ height: `${h.has ? Math.max(8, Math.abs(h.net) / hMax * 100) : 8}%` }} />
                   </div>
-                  <span className={`text-[10px] capitalize ${h.p === period ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>{monthName(h.p, 'LLL')}</span>
+                  <span className={`text-[10px] ${h.p === period ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>{monthName(h.p, 'LLL')}</span>
                 </div>
               ))}
             </div>
@@ -340,13 +340,12 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
 
   const total = expTotal(draft)
   const itemsTotal = draft.items.reduce((s, i) => s + i.amount, 0)
-  const maxItem = Math.max(1, ...draft.items.map(i => i.amount))
-
+  
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
         <div>
-          <p className="text-sm text-gray-500 capitalize">Расходы компании · {monthName(period)}</p>
+          <p className="text-sm text-gray-500">Расходы компании · {monthName(period)}</p>
           <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums mt-1">{money(total)}</p>
           <p className="text-xs text-gray-400 mt-1">зарплаты {money(draft.salary1 + draft.salary2)} · {draft.items.length} поз. на {money(itemsTotal)}</p>
         </div>
@@ -355,7 +354,7 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5 space-y-4">
           <h3 className="text-base font-bold text-gray-900">Зарплаты</h3>
           <label className="block">
@@ -389,13 +388,12 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
             <ul className="divide-y divide-gray-100 border-t border-gray-100">
               {items.map((it, i) => (
                 <li key={i} className="group relative flex items-center gap-2 px-5 py-2">
-                  <div className="absolute inset-y-1 left-0 rounded-r-full bg-indigo-50 -z-0" style={{ width: `${Math.min(100, n(it.amount) / maxItem * 100) * 0.35}%` }} />
                   <input value={it.desc} onChange={e => setItems(xs => xs.map((x, j) => j === i ? { ...x, desc: e.target.value } : x))}
                     className="relative z-10 min-w-0 flex-1 bg-transparent rounded-lg px-2 py-1.5 text-sm text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   <div className="relative z-10 w-28 flex-shrink-0">
                     <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
                     <input inputMode="decimal" value={it.amount} onChange={e => setItems(xs => xs.map((x, j) => j === i ? { ...x, amount: e.target.value.replace(',', '.') } : x))}
-                      className="w-full bg-transparent rounded-lg pl-5 pr-2 py-1.5 text-right text-sm font-semibold tabular-nums text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      className="w-full bg-transparent rounded-lg pl-5 pr-2 py-1.5 text-sm font-semibold tabular-nums text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                   <button type="button" onClick={() => setItems(xs => xs.filter((_, j) => j !== i))} className="relative z-10 p-1.5 rounded-lg text-gray-300 hover:bg-red-50 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100" aria-label="Удалить расход"><Trash2 size={15} /></button>
                 </li>
@@ -703,7 +701,7 @@ export default function IncomePage() {
               <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border border-gray-100 bg-white p-1.5 shadow-xl">
                 <button onClick={exportMonth} className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-gray-50">
                   <FileSpreadsheet size={18} className="mt-0.5 text-emerald-600" />
-                  <span><span className="block text-sm font-medium text-gray-900">Этот месяц</span><span className="block text-xs text-gray-400 capitalize">Excel · {monthName(period)}</span></span>
+                  <span><span className="block text-sm font-medium text-gray-900">Этот месяц</span><span className="block text-xs text-gray-400">Excel · {monthName(period)}</span></span>
                 </button>
                 <button onClick={exportAll} className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-gray-50">
                   <FileSpreadsheet size={18} className="mt-0.5 text-emerald-600" />
@@ -728,7 +726,7 @@ export default function IncomePage() {
             return (
               <button key={s.p} data-active={active} onClick={() => setMonth(parseISO(s.p))}
                 className={`flex-shrink-0 min-w-[96px] rounded-2xl border px-3 py-2 text-left transition-colors ${active ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
-                <span className={`block text-xs font-medium capitalize ${active ? 'text-white/70' : 'text-gray-500'}`}>{monthName(s.p, 'LLLL')}{s.p === curPeriod ? ' · сейчас' : ''}</span>
+                <span className={`block text-xs font-medium ${active ? 'text-white/70' : 'text-gray-500'}`}>{monthName(s.p, 'LLLL')}{s.p === curPeriod ? ' · сейчас' : ''}</span>
                 <span className={`block text-sm font-bold tabular-nums ${!s.has ? (active ? 'text-white/50' : 'text-gray-300') : s.profit < 0 ? (active ? 'text-red-300' : 'text-red-600') : (active ? 'text-emerald-300' : 'text-emerald-600')}`}>
                   {s.has ? moneyShort(s.profit) : '—'}
                 </span>
@@ -768,12 +766,12 @@ export default function IncomePage() {
           <div className={`relative overflow-hidden rounded-[22px] p-5 sm:p-6 text-white ${profitUp ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-red-600'}`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-white/80 capitalize">Чистая прибыль · {monthName(period)}</p>
+                <p className="text-sm text-white/80">Чистая прибыль · {monthName(period)}</p>
                 <p className="text-4xl sm:text-5xl font-bold tracking-tight tabular-nums mt-1">{money(sum.profit)}</p>
                 {delta !== null && (
                   <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-xs font-medium">
                     {delta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                    {delta >= 0 ? '+' : '−'}{abs(delta)} к {monthName(pKey(subMonths(month, 1)), 'LLLL')}
+                    {delta >= 0 ? '+' : '−'}{abs(delta)} к прошлому месяцу
                   </p>
                 )}
               </div>
@@ -814,7 +812,7 @@ export default function IncomePage() {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {sum.accs.map(x => {
+              {sum.accs.filter(x => x.cars > 0 || x.t.net !== 0).map(x => {
                 const col = colorOf(x.a.key)
                 const share = positiveTotal > 0 && x.t.net > 0 ? Math.round(x.t.net / positiveTotal * 100) : 0
                 return (
@@ -845,7 +843,7 @@ export default function IncomePage() {
             <div className="xl:col-span-2 bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-base font-bold text-gray-900">Прибыль по месяцам</h2>
-                <span className="text-xs text-gray-500 tabular-nums">с {allTime[0] ? monthName(allTime[0].p, 'LLLL') : '—'}: прибыль <b className={allProfit < 0 ? 'text-red-600' : 'text-gray-900'}>{money(allProfit)}</b> · gross {money(allGross)}</span>
+                <span className="text-xs text-gray-500 tabular-nums">за всё время: прибыль <b className={allProfit < 0 ? 'text-red-600' : 'text-gray-900'}>{money(allProfit)}</b> · gross {money(allGross)}</span>
               </div>
               <div className="mt-4 flex h-48 gap-2 sm:gap-3">
                 {trend.map(s => {
@@ -863,7 +861,7 @@ export default function IncomePage() {
                         <div className={`mx-auto w-full max-w-[44px] rounded-b-lg ${active ? 'bg-red-500' : 'bg-red-300 group-hover:bg-red-400'}`} style={{ height: `${hNeg}%` }} />
                         {s.profit < 0 && <span className="text-[10px] sm:text-[11px] font-semibold text-red-600 text-center tabular-nums mt-1 truncate">{moneyShort(s.profit)}</span>}
                       </div>
-                      <span className={`mt-1 text-center text-[11px] capitalize ${active ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{monthName(s.p, 'LLL')}</span>
+                      <span className={`mt-1 text-center text-[11px] ${active ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{monthName(s.p, 'LLL')}</span>
                     </button>
                   )
                 })}
@@ -930,7 +928,7 @@ export default function IncomePage() {
               <span className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${colorOf(activeAcc.a.key).soft}`}>{activeAcc.a.label.slice(0, 1)}</span>
               <div className="min-w-0 flex-1">
                 <h2 className="text-lg font-bold text-gray-900">{activeAcc.a.label}</h2>
-                <p className="text-sm text-gray-500 capitalize">{accCars.length} машин · {monthName(period)}</p>
+                <p className="text-sm text-gray-500">{accCars.length} машин · {monthName(period)}</p>
               </div>
               <div className="text-right">
                 <p className="text-xs text-gray-400">Итог</p>
@@ -1012,7 +1010,7 @@ export default function IncomePage() {
           <div className="bg-white rounded-3xl shadow-xl p-6 w-full max-w-sm space-y-4">
             <div>
               <h2 className="text-lg font-semibold">Новая машина</h2>
-              <p className="text-sm text-gray-400 capitalize">{activeAcc.a.label} · с {monthName(period)}</p>
+              <p className="text-sm text-gray-400">{activeAcc.a.label} · с {monthName(period)}</p>
             </div>
             <label className="block">
               <span className="block text-sm font-medium text-gray-700 mb-1">Авто из парка</span>
