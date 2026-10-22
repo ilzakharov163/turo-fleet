@@ -10,6 +10,7 @@ const pageTitles: Record<string, string> = {
   '/cars': 'Автомобили',
   '/calendar': 'Календарь',
   '/expenses': 'Расходы',
+  '/income': 'Доходы',
   '/analytics': 'Аналитика',
   '/claims': 'Клеймы и ремонт',
   '/stickers': 'Наклейки',
