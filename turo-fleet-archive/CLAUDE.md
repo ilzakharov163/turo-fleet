@@ -22,7 +22,7 @@
 - **income** — «Доходы» (см. ниже, самый большой раздел).
 - **claims** — клеймы (`claims`: status waiting/in_repair/done, opened_date, completed_date, initial_payment_received, supplement_paid, notes). Завершённые показывают только машину, номер и дату завершения.
 - **stickers** — наклейки (`sticker_cars`, `sticker_changes` с old_plate/new_plate). Замена каждые 45 дней, жёлтый за 7 дней. При замене вводится новый номер → обновляется `cars.plate` везде.
-- **team** — пользователи через RPC `list_team()`, `update_team_member(p_id, p_role, p_permissions, p_full_name)`. Роли admin/partner/employee, `profiles.permissions text[]` — список разделов. Новый пользователь = employee с доступом только к `/expenses`. Пользователей создаёт админ в кабинете Supabase (старые /api/invite и /join удалены 22.10.2026 — были открыты без проверки). Сейчас ограничение доступа — только в UI (Sidebar); правила по разделам в базе подготовлены в `supabase-section-access.sql`, но ещё НЕ применены (ждут подтверждения владельца).
+- **team** — пользователи через RPC `list_team()`, `update_team_member(p_id, p_role, p_permissions, p_full_name)`. Роли admin/partner/employee, `profiles.permissions text[]` — список разделов. Новый пользователь = employee с доступом только к `/expenses`. Пользователей создаёт админ в кабинете Supabase (старые /api/invite и /join удалены 22.10.2026 — были открыты без проверки). Галочки ограничивают и меню (Sidebar), и саму базу (RLS по разделам, см. «Безопасность и доступ»). Публичная регистрация в Supabase должна быть выключена.
 - **reports** — готовые сообщения для Telegram (navigator.share → иначе копирование) + Excel (CSV с BOM): Автопарк сегодня, Клеймы (формат «Initial получен: да/нет», «Supplement получен: да/нет»), Зарплата работника, Доходы (с платежами). Есть «Все отчёты одним сообщением».
 
 ## Правило зарплаты работника (везде одинаково)
@@ -54,10 +54,18 @@
 
 **Карточка «Прибыль» на Дашборде:** чистая прибыль последнего месяца, где уже внесён Gross (текущий месяц заполняется в конце, без Gross он бы показал ложный минус), и разница с предыдущим месяцем. Формулы те же, что в «Доходах». Видна только admin или тем, у кого в permissions есть `/income`. Клик → /income.
 
-**Приложение на iPhone:** PWA — `src/app/manifest.ts`, `src/app/apple-icon.png`, `public/icon-192/512.png`. Ставится из Safari: Поделиться → На экран «Домой».
+
+## Безопасность и доступ (с 22.10.2026)
+- RLS по разделам применён (миграция `rls_by_sections`, SQL в `supabase-rls-sections.sql`). `can_any(text[])` — true для admin или если в `profiles.permissions` есть хоть один из разделов (не-админ без разделов = `{/expenses}`); `is_member()` — у пользователя есть профиль.
+- Карта: cars — читают все, insert/delete `/cars`, update `/cars,/stickers`; car_blocks — читают `/calendar,/cars,/dashboard,/income,/reports`, пишут `/calendar,/cars`; expenses — читают `/expenses,/dashboard,/analytics`, пишут `/expenses`; claims — читают `/claims,/dashboard,/reports`, пишут `/claims`; sticker_* — читают `/stickers,/dashboard`, пишут `/stickers`; revenue_*, tracker_archive — только `/income`; activity_log — каждый пишет свои записи, читает `/log`; maintenance — только admin; team_members — своя строка или admin; чеки (storage receipts) — `/expenses`.
+- Новая таблица = сразу политики через `can_any(...)`, не «full access». Если раздел читает данные другого раздела — добавить его в список читающих, иначе он молча получит пустоту (пример: отчёт «Доходы» скрыт без `/income`).
+- Старые API приглашений (`/api/invite`, `/api/join/*`, `/api/team/names`) и страница `/join` удалены — работали с сервисным ключом без проверки входа.
+
+## Приложение на iPhone
+PWA: `src/app/manifest.ts`, иконки `src/app/apple-icon.png`, `public/icon-192.png`, `public/icon-512.png` (машина с дугами из `logo.png` без надписи), `appleWebApp` в `src/app/layout.tsx`. Ставится через Safari → Поделиться → На экран «Домой». `manifest.webmanifest` исключён из проверки входа в `proxy.ts`.
 
 ## Как работать с проектом
-- Перед изменением схемы — посмотреть текущие таблицы; RLS-политика по образцу: `"auth users full access" for all to authenticated using (true) with check (true)`.
+- Перед изменением схемы — посмотреть текущие таблицы; политики RLS — по разделам через `can_any(...)` (см. «Безопасность и доступ»).
 - Не менять и не удалять данные без явного согласия владельца. Не вводить пароли.
 - После изменений: `npm run build` (или проверить статус деплоя Vercel), проверить страницу на сайте, в том числе на ширине телефона.
 
