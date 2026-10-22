@@ -410,6 +410,41 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
   )
 }
 
+// ── Ячейка как в Excel: Enter — вниз, ↑/↓ — по строкам, сохраняется сама ──
+function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '', strong = false, boxed = false }: {
+  grid: string; row: number; col: number; value: number; onCommit: (v: number) => void
+  pct?: boolean; placeholder?: string; strong?: boolean; boxed?: boolean
+}) {
+  const shown = (x: number) => (x ? String(pct ? round2(x * 100) : round2(x)) : '')
+  const [v, setV] = useState(shown(value))
+  const [focused, setFocused] = useState(false)
+  const skip = useRef(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!focused) setV(shown(value)) }, [value, focused])
+  function commit() {
+    const num = n(v.replace(',', '.').replace(/[^\d.-]/g, ''))
+    const next = pct ? round6(num / 100) : round2(num)
+    if (Math.abs(next - n(value)) > 1e-9) onCommit(next)
+  }
+  function move(dr: number, target: HTMLInputElement) {
+    const el = document.querySelector<HTMLInputElement>(`input[data-grid="${grid}"][data-row="${row + dr}"][data-col="${col}"]`)
+    if (el) { el.focus(); el.select() } else target.blur()
+  }
+  return (
+    <input data-grid={grid} data-row={row} data-col={col} inputMode="decimal" enterKeyHint="next" value={v} placeholder={placeholder}
+      onFocus={e => { setFocused(true); e.target.select() }}
+      onBlur={() => { setFocused(false); if (skip.current) { skip.current = false; setV(shown(value)); return } commit() }}
+      onChange={e => setV(e.target.value)}
+      onKeyDown={e => {
+        const t = e.currentTarget
+        if (e.key === 'Enter' || e.key === 'ArrowDown') { e.preventDefault(); move(e.shiftKey ? -1 : 1, t) }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1, t) }
+        else if (e.key === 'Escape') { skip.current = true; t.blur() }
+      }}
+      className={`w-full min-w-0 text-right tabular-nums text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-md bg-transparent px-2 py-2 hover:bg-indigo-50/70'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
+  )
+}
+
 // ── Страница ──
 export default function IncomePage() {
   const [loading, setLoading] = useState(true)
@@ -423,7 +458,9 @@ export default function IncomePage() {
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [view, setView] = useState<string>('summary')
   const [drawer, setDrawer] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<'order' | 'net'>('order')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const entriesRef = useRef<Entry[]>([])
+  const saveChain = useRef<Promise<void>>(Promise.resolve())
   const [exportOpen, setExportOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [addCar, setAddCar] = useState(false)
@@ -526,7 +563,7 @@ export default function IncomePage() {
 
   useEffect(() => {
     if (loading) return
-    if (view !== 'summary' && view !== 'expenses' && !sum.accs.some(x => x.a.key === view)) setView('summary')
+    if (view !== 'summary' && view !== 'expenses' && view !== 'gross' && !sum.accs.some(x => x.a.key === view)) setView('summary')
   }, [loading, view, sum.accs])
 
   // Все машины месяца — для «лучших» и «в минусе»
@@ -539,6 +576,35 @@ export default function IncomePage() {
   const allProfit = allTime.reduce((s, x) => s + x.profit, 0)
   const allGross = allTime.reduce((s, x) => s + x.total.gross, 0)
   const bestMonth = [...allTime].sort((a, b) => b.profit - a.profit)[0]
+
+  entriesRef.current = entries
+
+  // ── Быстрое сохранение из таблицы ──
+  function patchEntry(carId: string, patch: (e: Entry) => Entry) {
+    const cur = entriesRef.current.find(x => x.revenue_car_id === carId && x.period === period)
+      || { revenue_car_id: carId, period, gross: 0, repair: 0, claim_items: [], other_items: [] }
+    const next = patch({ ...cur, claim_items: [...cur.claim_items], other_items: [...cur.other_items] })
+    const list = [...entriesRef.current.filter(x => !(x.revenue_car_id === carId && x.period === period)), next]
+    entriesRef.current = list
+    setEntries(list)
+    setSaveState('saving')
+    saveChain.current = saveChain.current.then(async () => {
+      const { error } = await createClient().from('revenue_entries').upsert({
+        revenue_car_id: next.revenue_car_id, period: next.period, gross: next.gross, repair: next.repair,
+        claim_items: next.claim_items, other_items: next.other_items, updated_at: new Date().toISOString(),
+      }, { onConflict: 'revenue_car_id,period' })
+      if (error) { setSaveState('error'); alert(`Не сохранилось: ${error.message}`); return }
+      setSaveState('saved')
+      log('update', 'revenue_entry', carId, { period: next.period, net: round2(calc(next).net) })
+    })
+  }
+  function setClaimField(carId: string, field: 'claim' | 'supplement' | 'pct', val: number) {
+    patchEntry(carId, e => {
+      const items = e.claim_items.length ? [...e.claim_items] : [{ claim: 0, supplement: 0, pct: 0.2 }]
+      items[0] = { ...items[0], [field]: val }
+      return { ...e, claim_items: items.filter(c => c.claim || c.supplement) }
+    })
+  }
 
   // ── Сохранение ──
   async function saveEntry(e: Entry) {
@@ -675,7 +741,10 @@ export default function IncomePage() {
 
   const activeAcc = sum.accs.find(x => x.a.key === view)
   const accCars = activeAcc ? carsIn(activeAcc.a.key, period) : []
-  const accCarsSorted = sortBy === 'net' ? [...accCars].sort((a, b) => calc(entryOf(b.id, period)).net - calc(entryOf(a.id, period)).net) : accCars
+  const grossRows = sum.accs.flatMap(x => carsIn(x.a.key, period).map(c => ({ c, a: x.a })))
+  const grossFilled = grossRows.filter(r => n(entryOf(r.c.id, period)?.gross) > 0).length
+  const prevP = pKey(subMonths(month, 1))
+  const saveLabel = saveState === 'saving' ? 'Сохраняю…' : saveState === 'saved' ? 'Сохранено' : saveState === 'error' ? 'Ошибка сохранения' : 'Сохраняется автоматически'
 
   // Тренд (столбики)
   const trend = monthStats.filter(s => s.p <= (period > curPeriod ? period : curPeriod)).slice(-8)
@@ -742,6 +811,10 @@ export default function IncomePage() {
       <div className="-mx-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
         <div className="flex gap-1.5 px-1 min-w-max">
           <button onClick={() => setView('summary')} className={`px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'summary' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>Сводка</button>
+          <button onClick={() => setView('gross')} className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border transition-colors ${view === 'gross' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
+            <Wallet size={14} /> Ввод Gross
+            {!loading && grossRows.length > 0 && <span className={`text-xs tabular-nums ${view === 'gross' ? 'text-white/80' : 'text-emerald-600/70'}`}>{grossFilled}/{grossRows.length}</span>}
+          </button>
           {sum.accs.map(x => (
             <button key={x.a.key} onClick={() => setView(x.a.key)}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === x.a.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
@@ -921,77 +994,147 @@ export default function IncomePage() {
       ) : view === 'expenses' ? (
         <ExpensesPanel key={period} period={period} payroll={payroll} onSave={saveExpenses}
           value={sum.exp || { period, salary1: 0, salary2: 0, items: [] }} />
-      ) : activeAcc ? (
-        <div className="space-y-4">
-          {/* Шапка аккаунта */}
-          <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
-            <div className="flex flex-wrap items-center gap-4">
-              <span className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${colorOf(activeAcc.a.key).soft}`}>{activeAcc.a.label.slice(0, 1)}</span>
-              <div className="min-w-0 flex-1">
-                <h2 className="text-lg font-bold text-gray-900">{activeAcc.a.label}</h2>
-                <p className="text-sm text-gray-500">{accCars.length} машин · {monthName(period)}</p>
+      ) : view === 'gross' ? (
+        <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+          <div className="px-4 sm:px-5 pt-5 pb-4 border-b border-gray-100">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Gross за {monthName(period, 'LLLL')}</h2>
+                <p className="text-sm text-gray-500 mt-0.5">Впишите, сколько пришло с Turo по каждой машине. <span className="hidden sm:inline">Enter — следующая машина.</span></p>
               </div>
               <div className="text-right">
-                <p className="text-xs text-gray-400">Итог</p>
-                <p className={`text-2xl font-bold tabular-nums ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</p>
+                <p className="text-2xl font-bold tabular-nums text-gray-900">{money(sum.total.gross)}</p>
+                <p className={`text-xs ${saveState === 'error' ? 'text-red-600' : saveState === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>{saveLabel}</p>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
-                { label: 'Gross', value: money(activeAcc.t.gross), icon: Wallet },
-                { label: 'Клеймы', value: money(activeAcc.t.claim + activeAcc.t.supp), icon: Receipt },
-                { label: 'Вычет Turo', value: `−${abs(activeAcc.t.ded)}`, icon: Receipt },
-                { label: 'Ремонт и прочее', value: `−${abs(activeAcc.t.repair + activeAcc.t.other)}`, icon: Wrench },
-              ].map(s => (
-                <div key={s.label} className="rounded-2xl bg-gray-50 px-3 py-2.5">
-                  <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-gray-400"><s.icon size={12} /> {s.label}</span>
-                  <span className="block text-base font-semibold tabular-nums text-gray-900">{s.value}</span>
+            <div className="mt-4 flex items-center gap-3">
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${grossRows.length ? grossFilled / grossRows.length * 100 : 0}%` }} />
+              </div>
+              <span className="text-xs font-medium tabular-nums text-gray-500">заполнено {grossFilled} из {grossRows.length}</span>
+            </div>
+          </div>
+          {sum.accs.filter(x => x.cars > 0).map(x => {
+            const rows = grossRows.filter(r => r.a.key === x.a.key)
+            return (
+              <div key={x.a.key}>
+                <div className="flex items-center justify-between gap-2 bg-gray-50 px-4 sm:px-5 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <span className="inline-flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${colorOf(x.a.key).dot}`} />{x.a.label}</span>
+                  <span className="tabular-nums normal-case">{money(x.t.gross)}</span>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 text-sm">
-              <button onClick={() => setSortBy('order')} className={`rounded-lg px-3 py-1.5 font-medium ${sortBy === 'order' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>По порядку</button>
-              <button onClick={() => setSortBy('net')} className={`rounded-lg px-3 py-1.5 font-medium ${sortBy === 'net' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>По доходу</button>
-            </div>
-            <button onClick={() => setAddCar(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Машина</button>
-          </div>
-
-          {accCars.length === 0 ? (
-            <div className="bg-white rounded-[18px] card-shadow p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {accCarsSorted.map(c => {
-                const e = entryOf(c.id, period)
-                const t = calc(e)
-                return (
-                  <button key={c.id} onClick={() => setDrawer(c.id)}
-                    className={`group text-left rounded-[18px] border p-4 transition-all ${e ? 'bg-white border-gray-100/80 card-shadow hover:border-indigo-200' : 'bg-white/60 border-dashed border-gray-200 hover:border-indigo-300 hover:bg-white'}`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${e ? 'bg-gray-100 text-gray-500' : 'bg-gray-50 text-gray-300'}`}><CarFront size={17} /></div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-gray-900 truncate">{c.name}</p>
-                        <p className="text-xs text-gray-400 truncate">{c.car ? `${c.car.make} ${c.car.model} · ${c.car.plate}` : 'не привязана к парку'}</p>
+                {rows.map(r => {
+                  const idx = grossRows.indexOf(r)
+                  const g = n(entryOf(r.c.id, period)?.gross)
+                  const prev = entryOf(r.c.id, prevP)
+                  return (
+                    <div key={r.c.id} className="grid grid-cols-[1fr_auto_128px] sm:grid-cols-[1fr_auto_160px] items-center gap-3 border-t border-gray-100 px-4 sm:px-5 py-1.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-gray-900">{r.c.name}</p>
+                        {r.c.car && <p className="truncate text-xs text-gray-400">{r.c.car.plate}</p>}
                       </div>
-                      <span className={`text-lg font-bold tabular-nums ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</span>
+                      <span className="text-xs tabular-nums text-gray-400 text-right" title="Прошлый месяц">{prev && n(prev.gross) ? <>было {money(n(prev.gross))}</> : ''}</span>
+                      <div className="flex items-center gap-1.5">
+                        <NumCell grid="gross" row={idx} col={0} value={g} placeholder="0" strong boxed
+                          onCommit={v => patchEntry(r.c.id, e => ({ ...e, gross: v }))} />
+                        <Check size={16} className={g > 0 ? 'text-emerald-500 flex-shrink-0' : 'text-transparent flex-shrink-0'} />
+                      </div>
                     </div>
-                    {e ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5 text-xs tabular-nums">
-                        <span className="rounded-lg bg-gray-50 px-2 py-1 text-gray-600">Gross {money(t.gross)}</span>
-                        {(t.claim + t.supp) > 0 && <span className="rounded-lg bg-indigo-50 px-2 py-1 text-indigo-700">Клеймы {money(t.claim + t.supp - t.ded)}</span>}
-                        {t.repair > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 text-amber-700">Ремонт −{abs(t.repair)}</span>}
-                        {t.other > 0 && <span className="rounded-lg bg-red-50 px-2 py-1 text-red-600">Прочее −{abs(t.other)}</span>}
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-xs font-medium text-indigo-500 group-hover:text-indigo-600">+ Внести данные за месяц</p>
-                    )}
-                  </button>
-                )
-              })}
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      ) : activeAcc ? (
+        <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+          <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-4 border-b border-gray-100">
+            <span className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${colorOf(activeAcc.a.key).soft}`}>{activeAcc.a.label.slice(0, 1)}</span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-bold text-gray-900">{activeAcc.a.label}</h2>
+              <p className={`text-xs ${saveState === 'error' ? 'text-red-600' : saveState === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>{monthName(period)} · {saveLabel}</p>
+            </div>
+            <div className="text-right mr-1">
+              <p className="text-[11px] uppercase tracking-wide text-gray-400">Итог</p>
+              <p className={`text-xl font-bold tabular-nums ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</p>
+            </div>
+            <button onClick={() => setAddCar(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Машина</button>
+          </div>
+          {accCars.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[860px] text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                    <th className="sticky left-0 z-10 bg-gray-50 px-4 py-2.5 text-left font-semibold">Машина</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Gross</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Claim</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Supplement</th>
+                    <th className="px-2 py-2.5 text-right font-semibold w-20">% выч.</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Вычет</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Ремонт</th>
+                    <th className="px-2 py-2.5 text-right font-semibold">Прочее</th>
+                    <th className="px-4 py-2.5 text-right font-semibold">Итог</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accCars.map((c, ri) => {
+                    const e = entryOf(c.id, period)
+                    const t = calc(e)
+                    const items = e?.claim_items || []
+                    const first = items[0]
+                    const grid = `acc-${activeAcc.a.key}`
+                    return (
+                      <tr key={c.id} className="group border-t border-gray-100">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-gray-50 px-4 py-1">
+                          <button onClick={() => setDrawer(c.id)} className="text-left" title="Подробнее: несколько клеймов, прочие расходы, история">
+                            <span className="block font-medium text-gray-900 hover:text-indigo-600">{c.name}</span>
+                            <span className="block text-[11px] text-gray-400">{c.car?.plate || 'не привязана'}</span>
+                          </button>
+                        </td>
+                        <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={0} value={n(e?.gross)} strong onCommit={v => patchEntry(c.id, x => ({ ...x, gross: v }))} /></td>
+                        {items.length > 1 ? (
+                          <td colSpan={3} className="px-2 py-1 group-hover:bg-gray-50">
+                            <button onClick={() => setDrawer(c.id)} className="w-full rounded-md px-2 py-2 text-right text-indigo-700 hover:bg-indigo-50">
+                              {items.length} клейма · {money(t.claim)} / {money(t.supp)}
+                            </button>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={1} value={n(first?.claim)} onCommit={v => setClaimField(c.id, 'claim', v)} /></td>
+                            <td className="px-1 py-1 w-[110px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={2} value={n(first?.supplement)} onCommit={v => setClaimField(c.id, 'supplement', v)} /></td>
+                            <td className="px-1 py-1 w-20 group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={3} value={n(first?.pct)} pct placeholder={first ? '0' : '20'} onCommit={v => setClaimField(c.id, 'pct', v)} /></td>
+                          </>
+                        )}
+                        <td className="px-2 py-1 text-right tabular-nums text-gray-400 group-hover:bg-gray-50">{t.ded ? `−${abs(t.ded)}` : ''}</td>
+                        <td className="px-1 py-1 w-[100px] group-hover:bg-gray-50"><NumCell grid={grid} row={ri} col={4} value={n(e?.repair)} onCommit={v => patchEntry(c.id, x => ({ ...x, repair: v }))} /></td>
+                        <td className="px-1 py-1 group-hover:bg-gray-50">
+                          <button onClick={() => setDrawer(c.id)} className={`w-full rounded-md px-2 py-2 text-right tabular-nums hover:bg-indigo-50 ${t.other ? 'text-red-600' : 'text-gray-300'}`} title={(e?.other_items || []).map(o => `${o.desc}: ${o.amount}`).join('\n') || 'Добавить расход'}>
+                            {t.other ? `−${abs(t.other)}` : '+'}
+                          </button>
+                        </td>
+                        <td className={`px-4 py-1 text-right font-bold tabular-nums group-hover:bg-gray-50 ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold tabular-nums text-gray-700">
+                    <td className="sticky left-0 z-10 bg-gray-50 px-4 py-3 text-left">Итого</td>
+                    <td className="px-3 py-3 text-right">{money(activeAcc.t.gross)}</td>
+                    <td className="px-3 py-3 text-right">{money(activeAcc.t.claim)}</td>
+                    <td className="px-3 py-3 text-right">{money(activeAcc.t.supp)}</td>
+                    <td />
+                    <td className="px-2 py-3 text-right text-gray-500">−{abs(activeAcc.t.ded)}</td>
+                    <td className="px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.repair)}</td>
+                    <td className="px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.other)}</td>
+                    <td className={`px-4 py-3 text-right text-base font-bold ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           )}
+          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Нажмите на ячейку и пишите цифру — сохраняется само. Enter — следующая строка. Несколько клеймов, прочие расходы и история машины — нажмите на её название.</p>
         </div>
       ) : null}
 
