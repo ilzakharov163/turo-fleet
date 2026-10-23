@@ -14,7 +14,7 @@ const nav = [
   { href: '/cars', icon: Car, label: 'Авто', access: ['/cars', '/claims', '/stickers'] },
   { href: '/expenses', icon: DollarSign, label: 'Расходы', access: ['/expenses'] },
   { href: '/income', icon: Wallet, label: 'Доходы', access: ['/income'] },
-  { href: '/reports', icon: FileText, label: 'Отчёты', access: ['/reports', '/analytics'] },
+  { href: '/reports', icon: FileText, label: 'Отчёты', access: ['/reports', '/analytics', '/income'] },
   { href: '/settings', icon: Settings, label: 'Настройки', access: [] as string[] },
 ]
 
