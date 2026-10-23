@@ -195,7 +195,7 @@ export default function DashboardPage() {
       if (role !== 'admin' && !((prof?.permissions as string[] | null) ?? []).includes('/income')) return
 
       const [entRes, expRes, payRes, dedRes2] = await Promise.all([
-        supabase.from('revenue_entries').select('period, gross, repair, claim_items, other_items'),
+        supabase.from('revenue_entries').select('period, gross, repair, claim_items, other_items, payment'),
         supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
         supabase.from('revenue_payments').select('period, amount'),
         supabase.from('salary_deductions').select('date, amount'),

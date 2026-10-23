@@ -108,7 +108,7 @@ export default function ReportsView() {
       supabase.from('claims').select('*, car:cars(make,model,plate)').order('opened_date', { ascending: true }),
       supabase.from('revenue_accounts').select('key, label, sort, active_from, active_until').order('sort'),
       supabase.from('revenue_cars').select('id, account, name, added_from, sold_from').order('sort'),
-      supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items'),
+      supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items, payment'),
       supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
       supabase.from('revenue_payments').select('period, amount'),
       supabase.from('salary_deductions').select('date, reason, amount').order('date'),

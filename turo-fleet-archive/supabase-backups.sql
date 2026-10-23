@@ -55,3 +55,6 @@ alter table public.cars add column if not exists removed_from date;
 
 -- 23.10.2026, миграция salary_deductions: вычеты из зарплаты работника (date, reason, amount, car_id).
 -- RLS: читают /cars,/dashboard,/reports,/income; пишут /cars. Таблица добавлена в make_backup.
+
+-- 23.10.2026, миграция revenue_entries_payment: платёж за машину в месяц (null — не задан, 0 — нет)
+alter table public.revenue_entries add column if not exists payment numeric;

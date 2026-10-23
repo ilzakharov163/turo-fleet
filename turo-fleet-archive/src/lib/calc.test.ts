@@ -30,6 +30,13 @@ test('итог машины', () => {
   assert.equal(Math.round(t.net * 100) / 100, Math.round((1000 + 500 + 6538 - 1307.6 - 200 - 50) * 100) / 100)
 })
 
+test('платёж за машину вычитается из её итога (null = не задан)', () => {
+  const base = { gross: 2000, repair: 0, claim_items: [], other_items: [] }
+  assert.equal(calcEntry({ ...base, payment: 650 }).net, 1350)
+  assert.equal(calcEntry({ ...base, payment: null }).net, 2000)
+  assert.equal(calcEntry(base).net, 2000)
+})
+
 test('прибыль месяца = итоги − расходы компании − платежи', () => {
   const entries = [{ gross: 3000, repair: 0, claim_items: [], other_items: [] }, { gross: 0, repair: 400, claim_items: null, other_items: null }]
   const exp = { salary1: 1000, salary2: 500, items: [{ amount: 100 }] }

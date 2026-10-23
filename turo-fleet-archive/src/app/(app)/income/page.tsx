@@ -34,6 +34,7 @@ interface RCar {
 interface Entry {
   id?: string; revenue_car_id: string; period: string
   gross: number; repair: number; claim_items: ClaimItem[]; other_items: OtherItem[]
+  payment?: number | null   // платёж за машину в этом месяце; null — не задан
 }
 interface MonthExp { period: string; salary1: number; salary2: number; items: OtherItem[] }
 interface Block { car_id: string; start_date: string; end_date: string | null }
@@ -44,10 +45,10 @@ type Cell = string | number
 const n = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
 const calc = (e?: Entry | null) => calcEntry(e)
 type Totals = ReturnType<typeof calc>
-const zero = (): Totals => ({ gross: 0, claim: 0, supp: 0, ded: 0, repair: 0, other: 0, net: 0 })
+const zero = (): Totals => ({ gross: 0, claim: 0, supp: 0, ded: 0, repair: 0, other: 0, payment: 0, net: 0 })
 const add = (a: Totals, b: Totals): Totals => ({
   gross: a.gross + b.gross, claim: a.claim + b.claim, supp: a.supp + b.supp, ded: a.ded + b.ded,
-  repair: a.repair + b.repair, other: a.other + b.other, net: a.net + b.net,
+  repair: a.repair + b.repair, other: a.other + b.other, payment: a.payment + b.payment, net: a.net + b.net,
 })
 const expTotal = (m?: MonthExp | null) => n(m?.salary1) + n(m?.salary2) + (m?.items || []).reduce((s, i) => s + n(i.amount), 0)
 const round2 = (v: number) => Math.round(v * 100) / 100
@@ -128,6 +129,7 @@ function CarDrawer({
   const base: Entry = entry || { revenue_car_id: rcar.id, period, gross: 0, repair: 0, claim_items: [], other_items: [] }
   const [gross, setGross] = useState(base.gross ? String(base.gross) : '')
   const [repair, setRepair] = useState(base.repair ? String(base.repair) : '')
+  const [payment, setPayment] = useState(base.payment ? String(base.payment) : '')
   const [claims, setClaims] = useState(base.claim_items.map(c => ({
     claim: c.claim ? String(c.claim) : '', supplement: c.supplement ? String(c.supplement) : '', pct: c.pct ? String(round2(n(c.pct) * 100)) : '',
   })))
@@ -143,12 +145,14 @@ function CarDrawer({
   const draft: Entry = {
     ...base,
     gross: n(gross), repair: n(repair),
+    // пустое поле = 0 (платежа нет), если раньше он был задан; иначе оставляем «не задан»
+    payment: payment.trim() ? n(payment) : (base.payment == null ? null : 0),
     claim_items: claims.filter(c => c.claim || c.supplement).map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: round6(n(c.pct) / 100) })),
     other_items: others.filter(o => o.desc.trim() || o.amount).map(o => ({ desc: o.desc.trim(), amount: n(o.amount) })),
   }
   const t = calc(draft)
-  const dirty = JSON.stringify([draft.gross, draft.repair, draft.claim_items, draft.other_items]) !==
-    JSON.stringify([n(base.gross), n(base.repair), base.claim_items.map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: n(c.pct) })), base.other_items.map(o => ({ desc: o.desc, amount: n(o.amount) }))])
+  const dirty = JSON.stringify([draft.gross, draft.repair, draft.payment ?? null, draft.claim_items, draft.other_items]) !==
+    JSON.stringify([n(base.gross), n(base.repair), base.payment ?? null, base.claim_items.map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: n(c.pct) })), base.other_items.map(o => ({ desc: o.desc, amount: n(o.amount) }))])
 
   async function save() {
     setSaving(true)
@@ -216,6 +220,10 @@ function CarDrawer({
             <label className="block">
               <span className="block text-xs font-medium text-gray-500 mb-1.5">Ремонт</span>
               <MoneyInput id="drawer-repair" value={repair} onChange={setRepair} big />
+            </label>
+            <label className="block col-span-2">
+              <span className="block text-xs font-medium text-gray-500 mb-1.5">Платёж за машину <span className="font-normal text-gray-400">— если платите вы; в следующий месяц перенесётся сам</span></span>
+              <MoneyInput id="drawer-payment" value={payment} onChange={setPayment} />
             </label>
           </div>
 
@@ -286,6 +294,7 @@ function CarDrawer({
             {t.ded > 0 && <div className="flex justify-between text-gray-500"><span>− Вычет Turo</span><span>−{abs(t.ded)}</span></div>}
             {t.repair > 0 && <div className="flex justify-between text-gray-500"><span>− Ремонт</span><span>−{abs(t.repair)}</span></div>}
             {t.other > 0 && <div className="flex justify-between text-gray-500"><span>− Прочее</span><span>−{abs(t.other)}</span></div>}
+            {t.payment > 0 && <div className="flex justify-between text-gray-500"><span>− Платёж за машину</span><span>−{abs(t.payment)}</span></div>}
             <div className="flex justify-between border-t border-gray-200 pt-2 mt-1 text-base font-bold">
               <span className="text-gray-900">Итог</span>
               <span className={t.net < 0 ? 'text-red-600' : 'text-emerald-600'}>{money(t.net)}</span>
@@ -580,6 +589,7 @@ export default function IncomePage() {
   const [monthExp, setMonthExp] = useState<MonthExp[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const carried = useRef(false)
+  const carriedPayments = useRef(false)
   const [fleet, setFleet] = useState<Car[]>([])
   const [blocks, setBlocks] = useState<Block[]>([])
   const [archiveCount, setArchiveCount] = useState(0)
@@ -605,7 +615,7 @@ export default function IncomePage() {
     const fetchAll = () => Promise.all([
       supabase.from('revenue_accounts').select('*').order('sort'),
       supabase.from('revenue_cars').select('*, car:cars(make,model,plate)').order('sort'),
-      supabase.from('revenue_entries').select('id, revenue_car_id, period, gross, repair, claim_items, other_items'),
+      supabase.from('revenue_entries').select('id, revenue_car_id, period, gross, repair, claim_items, other_items, payment'),
       supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
       supabase.from('revenue_payments').select('*').order('sort'),
       supabase.from('cars').select('*'),
@@ -622,7 +632,34 @@ export default function IncomePage() {
     setAccounts((a.data as Account[]) || [])
     // Название машины — из «Авто» (марка и модель), номер показывается отдельно; своё название только у непривязанных
     setRcars(((c.data as RCar[]) || []).map(r => r.car ? { ...r, name: `${r.car.make} ${r.car.model}` } : r))
-    setEntries(((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair) })))
+    let entryList = ((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair), payment: x.payment == null ? null : n(x.payment) }))
+    // Платёж за машину переходит в текущий месяц сам: если в прошлом месяце он был, а в этом ещё не задан (null)
+    {
+      const nowP = pKey(new Date())
+      const prevP = pKey(subMonths(new Date(), 1))
+      const accList = (a.data as Account[]) || []
+      const carList = (c.data as RCar[]) || []
+      const toCarry = carList.flatMap(rc => {
+        const acc = accList.find(x => x.key === rc.account)
+        if (!acc || !accActive(acc, nowP) || !carVisible(rc, nowP)) return []
+        const prev = entryList.find(x => x.revenue_car_id === rc.id && x.period === prevP)
+        const cur = entryList.find(x => x.revenue_car_id === rc.id && x.period === nowP)
+        if (!prev || !n(prev.payment) || (cur && cur.payment != null)) return []
+        return [{ rc, amount: n(prev.payment), cur }]
+      })
+      if (toCarry.length && !carriedPayments.current) {
+        carriedPayments.current = true
+        const fresh = toCarry.filter(x => !x.cur)
+        const existing = toCarry.filter(x => x.cur)
+        const ins = fresh.length
+          ? await supabase.from('revenue_entries').insert(fresh.map(x => ({ revenue_car_id: x.rc.id, period: nowP, payment: x.amount }))).select('id, revenue_car_id, period, gross, repair, claim_items, other_items, payment')
+          : { data: [] as Entry[], error: null }
+        const upd = await Promise.all(existing.map(x => supabase.from('revenue_entries').update({ payment: x.amount }).eq('id', x.cur!.id!)))
+        if (!ins.error) entryList = [...entryList, ...((ins.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair), payment: n(x.payment) }))]
+        existing.forEach((x, i) => { if (!upd[i].error) entryList = entryList.map(en => en.id === x.cur!.id ? { ...en, payment: x.amount } : en) })
+      }
+    }
+    setEntries(entryList)
     let payList = ((pay.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))
     // Платежи переходят из месяца в месяц: если в текущем месяце их нет — копируем последний список
     const nowP = pKey(new Date())
@@ -737,7 +774,7 @@ export default function IncomePage() {
     saveChain.current = saveChain.current.then(async () => {
       const { error } = await createClient().from('revenue_entries').upsert({
         revenue_car_id: next.revenue_car_id, period: next.period, gross: next.gross, repair: next.repair,
-        claim_items: next.claim_items, other_items: next.other_items, updated_at: new Date().toISOString(),
+        claim_items: next.claim_items, other_items: next.other_items, payment: next.payment ?? null, updated_at: new Date().toISOString(),
       }, { onConflict: 'revenue_car_id,period' })
       if (error) { setSaveState('error'); return }
       setSaveState('saved')
@@ -782,7 +819,7 @@ export default function IncomePage() {
   // ── Сохранение ──
   async function saveEntry(e: Entry) {
     const supabase = createClient()
-    const payload = { revenue_car_id: e.revenue_car_id, period: e.period, gross: e.gross, repair: e.repair, claim_items: e.claim_items, other_items: e.other_items, updated_at: new Date().toISOString() }
+    const payload = { revenue_car_id: e.revenue_car_id, period: e.period, gross: e.gross, repair: e.repair, claim_items: e.claim_items, other_items: e.other_items, payment: e.payment ?? null, updated_at: new Date().toISOString() }
     const { data, error } = await supabase.from('revenue_entries').upsert(payload, { onConflict: 'revenue_car_id,period' }).select('id').single()
     if (error) { return false }
     setEntries(prev => [...prev.filter(x => !(x.revenue_car_id === e.revenue_car_id && x.period === e.period)), { ...e, id: data?.id }])
@@ -873,6 +910,7 @@ export default function IncomePage() {
     `Gross: ${money(sum.total.gross)}`,
     `Клеймы (после вычета): ${money(sum.total.claim + sum.total.supp - sum.total.ded)}`,
     `Ремонт и прочее: −${abs(sum.total.repair + sum.total.other)}`,
+    ...(sum.total.payment ? [`Платежи за машины: −${abs(sum.total.payment)}`] : []),
     `Итого по аккаунтам: ${money(sum.total.net)}`,
     `Расходы компании: −${abs(sum.company)}`,
     `Затраты на сотрудника: −${abs(sum.staff)}${sum.ded ? ` (в т.ч. вычеты −${abs(sum.ded)})` : ''}`,
@@ -896,12 +934,12 @@ export default function IncomePage() {
         const e = entryOf(c.id, p)
         const t = calc(e)
         rows.push([monthName(p), x.a.label, c.name, c.car?.plate || '', t.gross, t.claim, t.supp, round2(t.ded), t.repair, t.other,
-          (e?.other_items || []).map(o => `${o.desc} ${o.amount}`).join('; '), round2(t.net)])
+          (e?.other_items || []).map(o => `${o.desc} ${o.amount}`).join('; '), t.payment, round2(t.net)])
       }
     }
     return rows
   }
-  const carHeader: Cell[] = ['Месяц', 'Аккаунт', 'Машина', 'Номер', 'Gross', 'Claim', 'Supplement', 'Вычет', 'Ремонт', 'Прочее', 'Прочее (что)', 'Итог']
+  const carHeader: Cell[] = ['Месяц', 'Аккаунт', 'Машина', 'Номер', 'Gross', 'Claim', 'Supplement', 'Вычет', 'Ремонт', 'Прочее', 'Прочее (что)', 'Платёж', 'Итог']
   function exportMonth() {
     const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Затраты на сотрудника'], ['Расходы', n(sum.exp?.salary1)], ['Зарплата', n(sum.exp?.salary2)]]
     for (const d of deductions.filter(x => x.date.startsWith(period.slice(0, 7)))) rows.push([`Вычет: ${d.reason} (${d.date})`, -n(d.amount)])
@@ -1083,7 +1121,7 @@ export default function IncomePage() {
                 {[
                   { label: 'Gross', value: money(sum.total.gross), cls: 'text-gray-900' },
                   { label: 'Клеймы (чистыми)', value: money(sum.total.claim + sum.total.supp - sum.total.ded - sum.total.repair), cls: 'text-gray-900' },
-                  { label: 'Прочее', value: sum.total.other ? `−${abs(sum.total.other)}` : '—', cls: 'text-gray-500' },
+                  { label: 'Прочее, платежи', value: sum.total.other || sum.total.payment ? `−${abs(sum.total.other + sum.total.payment)}` : '—', cls: 'text-gray-500' },
                   { label: 'Компания', value: `−${abs(sum.company)}`, cls: 'text-gray-500', go: 'expenses' },
                   { label: 'Сотрудник', value: `−${abs(sum.staff)}`, cls: 'text-gray-500', go: 'expenses' },
                   { label: 'Платежи', value: `−${abs(sum.pays)}`, cls: 'text-gray-500', go: 'payments' },
@@ -1108,13 +1146,14 @@ export default function IncomePage() {
               <span className="hidden sm:inline text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] border-collapse text-[15px] sm:text-sm tabular-nums">
+              <table className="w-full min-w-[780px] border-collapse text-[15px] sm:text-sm tabular-nums">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="sticky left-0 z-10 bg-gray-100 border-y border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Аккаунт</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Gross</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Клеймы <span className="normal-case font-normal">(после вычета и ремонта)</span></th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Прочее</th>
+                    <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Платежи машин</th>
                     <th className="bg-gray-100 border-y border-r border-gray-200 px-3 py-2.5 text-right font-semibold">Итог</th>
                     <th className="bg-gray-100 border-y border-gray-200 px-4 py-2.5 text-left font-semibold w-[170px]">Доля дохода</th>
                   </tr>
@@ -1134,6 +1173,7 @@ export default function IncomePage() {
                         <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.gross)}</td>
                         <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-700">{money(x.t.claim + x.t.supp - x.t.ded - x.t.repair)}</td>
                         <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{x.t.other ? `−${abs(x.t.other)}` : '—'}</td>
+                        <td className="group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{x.t.payment ? `−${abs(x.t.payment)}` : '—'}</td>
                         <td className={`group-hover:bg-indigo-50/60 border-b border-r border-gray-200 px-3 py-2.5 text-right font-bold ${x.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(x.t.net)}</td>
                         <td className="group-hover:bg-indigo-50/60 border-b border-gray-200 px-4 py-2.5">
                           <span className="flex items-center gap-2">
@@ -1151,30 +1191,31 @@ export default function IncomePage() {
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.gross)}</td>
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.claim + sum.total.supp - sum.total.ded - sum.total.repair)}</td>
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{sum.total.other ? `−${abs(sum.total.other)}` : '—'}</td>
+                    <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right text-gray-500">{sum.total.payment ? `−${abs(sum.total.payment)}` : '—'}</td>
                     <td className="bg-gray-50 border-b border-r border-gray-200 px-3 py-2.5 text-right">{money(sum.total.net)}</td>
                     <td className="bg-gray-50 border-b border-gray-200" />
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Расходы компании</td>
-                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{(sum.exp?.items || []).length} поз. · покупки и прочее</td>
+                    <td colSpan={4} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{(sum.exp?.items || []).length} поз. · покупки и прочее</td>
                     <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.company)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Затраты на сотрудника</td>
-                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">расходы {money(n(sum.exp?.salary1))} · зарплата {money(n(sum.exp?.salary2))}{sum.ded ? ` · вычеты −${abs(sum.ded)}` : ''}</td>
+                    <td colSpan={4} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">расходы {money(n(sum.exp?.salary1))} · зарплата {money(n(sum.exp?.salary2))}{sum.ded ? ` · вычеты −${abs(sum.ded)}` : ''}</td>
                     <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.staff)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('payments')}>
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Платежи</td>
-                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{payments.filter(x => x.period === period).length} платежей · машины, страховки, GPS</td>
+                    <td colSpan={4} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{payments.filter(x => x.period === period).length} платежей · машины, страховки, GPS</td>
                     <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.pays)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>
                   <tr className={profitUp ? 'bg-emerald-50' : 'bg-red-50'}>
                     <td className={`sticky left-0 z-10 border-r border-gray-200 px-4 py-3 font-bold text-gray-900 ${profitUp ? 'bg-emerald-50' : 'bg-red-50'}`}>Чистая прибыль</td>
-                    <td colSpan={3} className="border-r border-gray-200" />
+                    <td colSpan={4} className="border-r border-gray-200" />
                     <td className={`border-r border-gray-200 px-3 py-3 text-right text-base font-bold ${profitUp ? 'text-emerald-700' : 'text-red-600'}`}>{money(sum.profit)}</td>
                     <td />
                   </tr>
@@ -1343,7 +1384,7 @@ export default function IncomePage() {
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] table-fixed border-collapse text-[15px] sm:text-sm">
+              <table className="w-full min-w-[1010px] table-fixed border-collapse text-[15px] sm:text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="sticky left-0 z-20 bg-gray-100 border-b border-r border-gray-200 px-4 py-2.5 w-[190px] text-left font-semibold">Машина</th>
@@ -1354,6 +1395,7 @@ export default function IncomePage() {
                     <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold">Вычет</th>
                     <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold">Ремонт</th>
                     <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[120px] text-right font-semibold">Прочее</th>
+                    <th className="bg-gray-100 border-b border-r border-gray-200 px-3 py-2.5 w-[110px] text-right font-semibold" title="Ежемесячный платёж за машину (кредит/лизинг), если платите вы. Переносится в следующий месяц сам.">Платёж</th>
                     <th className="bg-gray-100 border-b border-gray-200 px-4 py-2.5 text-right font-semibold">Итог</th>
                   </tr>
                 </thead>
@@ -1395,6 +1437,7 @@ export default function IncomePage() {
                             {t.other ? `−${abs(t.other)}` : '+ добавить'}
                           </button>
                         </td>
+                        <td className={`${cell} w-[110px]`}><NumCell grid={grid} row={ri} col={5} value={n(e?.payment)} onCommit={v => patchEntry(c.id, x => ({ ...x, payment: v }))} /></td>
                         <td className={`border-b border-gray-200 px-4 py-2.5 text-right font-bold tabular-nums bg-gray-50 group-focus-within:bg-indigo-50/60 ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</td>
                       </tr>
                     )
@@ -1410,13 +1453,14 @@ export default function IncomePage() {
                     <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.ded)}</td>
                     <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.repair)}</td>
                     <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">−{abs(activeAcc.t.other)}</td>
+                    <td className="bg-gray-100 border-r border-gray-200 px-3 py-3 text-right text-gray-500">{activeAcc.t.payment ? `−${abs(activeAcc.t.payment)}` : '—'}</td>
                     <td className={`bg-gray-100 px-4 py-3 text-right text-base font-bold ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           )}
-          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Белые ячейки можно редактировать — нажмите и пишите цифру, сохраняется само. Enter — следующая строка, Tab — следующая колонка. Серые считаются автоматически. Несколько клеймов, прочие расходы и история — нажмите на название машины.</p>
+          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Белые ячейки можно редактировать — нажмите и пишите цифру, сохраняется само. «Платёж» — платёж за машину, если его платите вы; в новый месяц переносится сам (поставьте 0, если платежа больше нет). Enter — следующая строка, Tab — следующая колонка. Серые считаются автоматически. Несколько клеймов, прочие расходы и история — нажмите на название машины.</p>
         </div>
       ) : null}
 

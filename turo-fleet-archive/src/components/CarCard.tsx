@@ -52,7 +52,7 @@ export default function CarCard({ car, onClose, onChanged }: { car: Car; onClose
       setSticker({ tracked: (sc.data || []).length > 0, last: ((sch.data || []) as { changed_date: string }[])[0]?.changed_date || null })
       const ids = ((rc.data || []) as { id: string }[]).map(x => x.id)
       if (ids.length) {
-        const { data } = await supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items').in('revenue_car_id', ids)
+        const { data } = await supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items, payment').in('revenue_car_id', ids)
         setEntries((data || []) as Entry[])
       }
       setLoading(false)

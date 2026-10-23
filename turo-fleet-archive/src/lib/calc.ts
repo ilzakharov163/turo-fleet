@@ -31,9 +31,10 @@ export const inFleet = (car: { delisted?: boolean | null; removed_from?: string 
 // ── Доходы ──
 export interface ClaimItem { claim: number; supplement: number; pct: number }
 export interface OtherItem { desc?: string; amount: number }
-export interface RevenueEntry { gross: number; repair: number; claim_items: ClaimItem[] | null; other_items: OtherItem[] | null }
+export interface RevenueEntry { gross: number; repair: number; claim_items: ClaimItem[] | null; other_items: OtherItem[] | null; payment?: number | null }
 
-// итог машины = gross + Σ claim + Σ supplement − вычет − ремонт − Σ прочее; вычет = Σ supplement × pct
+// итог машины = gross + Σ claim + Σ supplement − вычет − ремонт − Σ прочее − платёж; вычет = Σ supplement × pct
+// платёж — ежемесячный платёж за машину (кредит/лизинг), если его платим мы
 export function calcEntry(e?: RevenueEntry | null) {
   const items = e?.claim_items || []
   const gross = num(e?.gross)
@@ -42,8 +43,9 @@ export function calcEntry(e?: RevenueEntry | null) {
   const ded = items.reduce((s, c) => s + num(c.supplement) * num(c.pct), 0)
   const repair = num(e?.repair)
   const other = (e?.other_items || []).reduce((s, o) => s + num(o.amount), 0)
-  const net = gross + claim + supp - ded - repair - other
-  return { gross, claim, supp, ded, repair, other, net }
+  const payment = num(e?.payment)
+  const net = gross + claim + supp - ded - repair - other - payment
+  return { gross, claim, supp, ded, repair, other, payment, net }
 }
 
 export interface MonthExpenses { salary1: number; salary2: number; items: OtherItem[] | null }

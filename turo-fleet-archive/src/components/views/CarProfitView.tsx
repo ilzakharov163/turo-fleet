@@ -25,6 +25,7 @@ interface Row {
   gross: number
   claims: number            // клеймы после вычета
   costs: number             // ремонт + прочее
+  payments: number          // платежи за машину
   net: number
   gone: boolean             // продана / разбита / аккаунт закрыт
 }
@@ -48,7 +49,7 @@ export default function CarProfitView() {
     Promise.all([
       supabase.from('revenue_accounts').select('key, label, active_from, active_until'),
       supabase.from('revenue_cars').select('id, account, name, car_id, added_from, sold_from, car:cars(make, model, plate, removed_from)'),
-      supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items'),
+      supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items, payment'),
     ]).then(([a, c, e]) => {
       setAccs((a.data || []) as Acc[])
       setRcars((c.data || []) as unknown as RCar[])
@@ -75,7 +76,7 @@ export default function CarProfitView() {
         key,
         name: rc.car ? `${rc.car.make} ${rc.car.model}` : rc.name,
         plate: rc.car?.plate || '',
-        accounts: [], months: [], gross: 0, claims: 0, costs: 0, net: 0, gone: true,
+        accounts: [], months: [], gross: 0, claims: 0, costs: 0, payments: 0, net: 0, gone: true,
       }
       if (!row.accounts.includes(accLabel(rc.account))) row.accounts.push(accLabel(rc.account))
       for (const e of own) {
@@ -83,6 +84,7 @@ export default function CarProfitView() {
         row.gross += t.gross
         row.claims += t.claim + t.supp - t.ded
         row.costs += t.repair + t.other
+        row.payments += t.payment
         row.net += t.net
         if (!row.months.includes(e.period)) row.months.push(e.period)
       }
@@ -112,18 +114,18 @@ export default function CarProfitView() {
   ].join('\n')
 
   function csv(): Cell[][] {
-    const head: Cell[] = ['№', 'Машина', 'Номер', 'Аккаунт', ...(mode === 'all' ? ['Месяцев', 'С', 'По'] : []), 'Gross', 'Клеймы (после вычета)', 'Ремонт и прочее', 'Итог', ...(mode === 'all' ? ['В среднем за месяц'] : []), 'Статус']
+    const head: Cell[] = ['№', 'Машина', 'Номер', 'Аккаунт', ...(mode === 'all' ? ['Месяцев', 'С', 'По'] : []), 'Gross', 'Клеймы (после вычета)', 'Ремонт и прочее', 'Платежи', 'Итог', ...(mode === 'all' ? ['В среднем за месяц'] : []), 'Статус']
     return [
       [title], [],
       head,
       ...rows.map((r, i) => [
         i + 1, r.name, r.plate, r.accounts.join(', '),
         ...(mode === 'all' ? [r.months.length, r.months[0] ? mName(r.months[0], 'LLL yyyy') : '', r.months.length ? mName(r.months[r.months.length - 1], 'LLL yyyy') : ''] : []),
-        round(r.gross), round(r.claims), round(-r.costs), round(r.net),
+        round(r.gross), round(r.claims), round(-r.costs), round(-r.payments), round(r.net),
         ...(mode === 'all' ? [round(r.months.length ? r.net / r.months.length : 0)] : []),
         r.gone ? 'уже нет' : 'в работе',
       ] as Cell[]),
-      [], ['Итого', '', '', '', ...(mode === 'all' ? ['', '', ''] : []), round(rows.reduce((s, r) => s + r.gross, 0)), round(rows.reduce((s, r) => s + r.claims, 0)), round(-rows.reduce((s, r) => s + r.costs, 0)), round(total)],
+      [], ['Итого', '', '', '', ...(mode === 'all' ? ['', '', ''] : []), round(rows.reduce((s, r) => s + r.gross, 0)), round(rows.reduce((s, r) => s + r.claims, 0)), round(-rows.reduce((s, r) => s + r.costs, 0)), round(-rows.reduce((s, r) => s + r.payments, 0)), round(total)],
     ]
   }
 
@@ -176,7 +178,7 @@ export default function CarProfitView() {
             <p className="text-xs text-gray-400 mt-1">
               машин: {rows.length}
               {rows.filter(r => r.net < 0).length > 0 && <> · в минусе: <span className="text-red-500">{rows.filter(r => r.net < 0).length}</span></>}
-              {' · '}это итоги машин до расходов компании, зарплаты и платежей
+              {' · '}итог машины — с её платежом, до расходов компании, зарплаты и общих платежей
             </p>
           </>
         )}
@@ -204,6 +206,7 @@ export default function CarProfitView() {
                     </div>
                     <span className={`text-base font-bold tabular-nums whitespace-nowrap ${r.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{usd(r.net)}</span>
                   </div>
+                  {r.payments > 0 && <p className="text-xs text-gray-400 mt-1">платежи −{usd(r.payments)}</p>}
                   {mode === 'all' && (
                     <p className="text-xs text-gray-400 mt-1">
                       {r.months.length} {monthsWord(r.months.length)}{r.months.length ? ` (${mName(r.months[0], 'LLL')} — ${mName(r.months[r.months.length - 1], 'LLL yyyy')})` : ''} · в среднем {usd(r.months.length ? r.net / r.months.length : 0)}/мес
@@ -225,6 +228,7 @@ export default function CarProfitView() {
                     <th className="px-4 py-3 font-medium text-right">Gross</th>
                     <th className="px-4 py-3 font-medium text-right">Клеймы</th>
                     <th className="px-4 py-3 font-medium text-right">Ремонт и прочее</th>
+                    <th className="px-4 py-3 font-medium text-right">Платежи</th>
                     <th className="px-4 py-3 font-medium text-right">Итог</th>
                     {mode === 'all' && <th className="px-4 py-3 font-medium text-right">В среднем / мес</th>}
                   </tr>
@@ -243,6 +247,7 @@ export default function CarProfitView() {
                       <td className="px-4 py-2.5 text-right">{r.gross ? usd(r.gross) : '—'}</td>
                       <td className="px-4 py-2.5 text-right">{r.claims ? usd(r.claims) : '—'}</td>
                       <td className="px-4 py-2.5 text-right text-gray-500">{r.costs ? `−${usd(r.costs)}` : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500">{r.payments ? `−${usd(r.payments)}` : '—'}</td>
                       <td className={`px-4 py-2.5 text-right font-semibold ${r.net < 0 ? 'text-red-600' : r.gone ? '' : 'text-gray-900'}`}>{usd(r.net)}</td>
                       {mode === 'all' && <td className="px-4 py-2.5 text-right text-gray-500">{usd(r.months.length ? r.net / r.months.length : 0)}</td>}
                     </tr>
@@ -254,6 +259,7 @@ export default function CarProfitView() {
                     <td className="px-4 py-3 text-right">{usd(rows.reduce((s, r) => s + r.gross, 0))}</td>
                     <td className="px-4 py-3 text-right">{usd(rows.reduce((s, r) => s + r.claims, 0))}</td>
                     <td className="px-4 py-3 text-right text-gray-500">−{usd(rows.reduce((s, r) => s + r.costs, 0))}</td>
+                    <td className="px-4 py-3 text-right text-gray-500">{rows.some(r => r.payments) ? `−${usd(rows.reduce((s, r) => s + r.payments, 0))}` : '—'}</td>
                     <td className={`px-4 py-3 text-right ${total < 0 ? 'text-red-600' : ''}`}>{usd(total)}</td>
                     {mode === 'all' && <td />}
                   </tr>
