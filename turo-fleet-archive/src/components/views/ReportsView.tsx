@@ -98,10 +98,11 @@ export default function ReportsView() {
   const [rev, setRev] = useState<{ accs: RevAcc[]; cars: RevCar[]; entries: RevEntry[]; exp: RevExp[]; pays: { period: string; amount: number }[] }>({ accs: [], cars: [], entries: [], exp: [], pays: [] })
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [copied, setCopied] = useState<string | null>(null)
+  const [deductions, setDeductions] = useState<{ date: string; reason: string; amount: number }[]>([])
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [carsRes, blocksRes, claimsRes, raRes, rcRes, reRes, rxRes, rpRes] = await Promise.all([
+    const [carsRes, blocksRes, claimsRes, raRes, rcRes, reRes, rxRes, rpRes, dRes] = await Promise.all([
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date, reason'),
       supabase.from('claims').select('*, car:cars(make,model,plate)').order('opened_date', { ascending: true }),
@@ -110,8 +111,10 @@ export default function ReportsView() {
       supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items'),
       supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
       supabase.from('revenue_payments').select('period, amount'),
+      supabase.from('salary_deductions').select('date, reason, amount').order('date'),
     ])
     setCars(carsRes.data || [])
+    setDeductions(dRes.data || [])
     setBlocks((blocksRes.data as Block[]) || [])
     setClaims((claimsRes.data as Claim[]) || [])
     setRev({ accs: (raRes.data as RevAcc[]) || [], cars: (rcRes.data as RevCar[]) || [], entries: (reRes.data as RevEntry[]) || [], exp: (rxRes.data as RevExp[]) || [], pays: (rpRes.data as { period: string; amount: number }[]) || [] })
@@ -210,19 +213,29 @@ export default function ReportsView() {
   const half = payroll.filter(p => p.salary === 75)
   const zero = payroll.filter(p => p.salary === 0)
   const salaryTotal = payroll.reduce((s, p) => s + p.salary, 0)
+  const monthDeds = deductions.filter(d => d.date.startsWith(format(month, 'yyyy-MM')))
+  const dedTotal = monthDeds.reduce((s, d) => s + Number(d.amount), 0)
   const salaryText = [
     `💵 Зарплата за ${monthLabel}`,
     '',
     ...(full.length ? [`✅ $150 × ${full.length} = $${full.length * 150}`, ...full.map(p => `• ${carName(p.car)}`), ''] : []),
     ...(half.length ? [`🟡 $75 × ${half.length} = $${half.length * 75} (простой 14+ дней)`, ...half.map(p => `• ${carName(p.car)} — простой ${p.inactive} дн.`), ''] : []),
     ...(zero.length ? [`⛔ $0 × ${zero.length} (не работали весь месяц)`, ...zero.map(p => `• ${carName(p.car)}`), ''] : []),
-    `Итого: $${salaryTotal}`,
+    `Итого по машинам: $${salaryTotal}`,
+    ...(monthDeds.length ? ['', `➖ Вычеты: −${usd(dedTotal)}`, ...monthDeds.map(d => `• ${format(parseISO(d.date), 'd MMM', { locale: ru })} — ${d.reason} — ${usd(Number(d.amount))}`), '', `💰 К выплате: ${usd(salaryTotal - dedTotal)}`] : []),
   ].join('\n')
   const salaryCsv: Cell[][] = [
     ['Авто', 'Номер', 'Дней работы', 'Дней простоя', 'Зарплата, $'],
     ...payroll.map(p => [`${p.car.make} ${p.car.model}`, p.car.plate, days.length - p.inactive, p.inactive, p.salary]),
     [],
-    ['Итого', '', '', '', salaryTotal],
+    ['Итого по машинам', '', '', '', salaryTotal],
+    ...(monthDeds.length ? [
+      [],
+      ['Вычеты', 'Дата', 'За что', '', 'Сумма, $'],
+      ...monthDeds.map(d => ['', d.date, d.reason, '', -Number(d.amount)] as Cell[]),
+      ['Итого вычетов', '', '', '', -dedTotal],
+      ['К выплате', '', '', '', salaryTotal - dedTotal],
+    ] : []),
   ]
 
   // ── 4. Доходы ──
@@ -275,7 +288,7 @@ export default function ReportsView() {
     },
     {
       key: 'salary', title: 'Зарплата работника', icon: Users, color: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
-      subtitle: `$${salaryTotal} · ${full.length} × $150 · ${half.length} × $75${zero.length ? ` · ${zero.length} × $0` : ''}`,
+      subtitle: dedTotal ? `к выплате ${usd(salaryTotal - dedTotal)} · вычеты −${usd(dedTotal)}` : `$${salaryTotal} · ${full.length} × $150 · ${half.length} × $75${zero.length ? ` · ${zero.length} × $0` : ''}`,
       text: salaryText, csv: salaryCsv, file: `zarplata-${format(month, 'yyyy-MM')}.csv`,
     },
     // Без доступа к «Доходам» база не отдаёт аккаунты — отчёт не показываем

@@ -70,7 +70,7 @@ export default function DashboardPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [monthTotal, setMonthTotal] = useState(0)
   const [unpaidTotal, setUnpaidTotal] = useState(0)
-  const [salary, setSalary] = useState({ total: 0, full: 0, half: 0, zero: 0 })
+  const [salary, setSalary] = useState({ total: 0, full: 0, half: 0, zero: 0, ded: 0 })
   const [attention, setAttention] = useState<Attention[]>([])
   const [idle, setIdle] = useState<IdleCar[]>([])
   const [recent, setRecent] = useState<RecentExpense[]>([])
@@ -86,7 +86,7 @@ export default function DashboardPage() {
 
       loadProfit()
 
-      const [carsRes, monthExpRes, recentRes, blocksRes, stickerCarsRes, stickerChRes, claimsRes] = await Promise.all([
+      const [carsRes, monthExpRes, recentRes, blocksRes, stickerCarsRes, stickerChRes, claimsRes, dedRes] = await Promise.all([
         supabase.from('cars').select('*'),
         supabase.from('expenses').select('amount, paid').gte('date', monthStart),
         supabase.from('expenses').select('id, title, amount, date, car:cars(make,model,plate)').order('date', { ascending: false }).order('created_at', { ascending: false }).limit(6),
@@ -94,6 +94,7 @@ export default function DashboardPage() {
         supabase.from('sticker_cars').select('car_id, car:cars(make,model,plate)'),
         supabase.from('sticker_changes').select('car_id, changed_date').order('changed_date', { ascending: false }),
         supabase.from('claims').select('id, status'),
+        supabase.from('salary_deductions').select('amount').gte('date', monthStart),
       ])
 
       const allCars: Car[] = carsRes.data || []
@@ -103,7 +104,7 @@ export default function DashboardPage() {
 
       // ── Зарплата работника (как в календаре) ──
       const days = eachDayOfInterval({ start: startOfMonth(now), end: endOfMonth(now) })
-      const sal = { total: 0, full: 0, half: 0, zero: 0 }
+      const sal = { total: 0, full: 0, half: 0, zero: 0, ded: ((dedRes.data || []) as { amount: number }[]).reduce((t, d) => t + Number(d.amount), 0) }
       for (const car of listed) {
         const carBlocks = blocks.filter(b => b.car_id === car.id)
         const inactive = days.filter(d => carBlocks.some(b => isWithinInterval(d, { start: parseISO(b.start_date), end: blockEnd(b) }))).length
@@ -256,8 +257,8 @@ export default function DashboardPage() {
     },
     {
       label: 'Зарплата',
-      value: `$${salary.total}`,
-      sub: `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
+      value: `$${(salary.total - salary.ded).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+      sub: salary.ded ? `$${salary.total} − вычеты $${salary.ded.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
       href: '/cars?tab=downtime',
       icon: Users,
       tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
@@ -282,27 +283,27 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      {/* Stat cards — кликабельные */}
-      <div className={`grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4`}>
-        {statCards.map(card => (
+      {/* Показатели — одна строка; на телефоне прибыль сверху, остальное 2×2 */}
+      <div className={`bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden grid grid-cols-2 ${profit ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+        {statCards.map((card, idx) => (
           <Link
             key={card.label}
             href={card.href}
-            className={`group bg-white rounded-[18px] p-4 sm:p-5 border border-gray-100/80 card-shadow hover:border-gray-200 transition-colors ${'wide' in card ? 'col-span-2 lg:col-span-4' : ''}`}
+            className={`group relative p-4 sm:p-5 hover:bg-gray-50/70 transition-colors
+              ${'wide' in card ? 'col-span-2 lg:col-span-1 border-b lg:border-b-0' : ''}
+              ${idx > 0 ? 'lg:border-l border-gray-100' : ''}
+              ${'wide' in card ? '' : (statCards.indexOf(card) - (profit ? 1 : 0)) % 2 === 1 ? 'border-l border-gray-100 lg:border-l' : ''}
+              ${'wide' in card ? '' : (statCards.indexOf(card) - (profit ? 1 : 0)) < 2 ? 'border-b border-gray-100 lg:border-b-0' : ''}`}
           >
-            <div className="flex items-start justify-between gap-2 mb-3">
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm text-gray-500 font-medium">{card.label}</p>
-                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? <span className="skeleton block h-8 w-20 mt-1" /> : card.value}</p>
-              </div>
-              <div className={`w-10 h-10 sm:w-11 sm:h-11 flex-shrink-0 rounded-xl ${card.tint} flex items-center justify-center`}>
-                <card.icon size={20} strokeWidth={2} />
-              </div>
-            </div>
-            <p className="text-xs text-gray-400 flex items-center justify-between gap-2">
-              <span className="line-clamp-2">{loading ? '' : card.sub}</span>
-              <ChevronRight size={14} className="flex-shrink-0 text-gray-300 group-hover:text-gray-500 transition-colors" />
+            <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
+              <card.icon size={14} className="text-gray-400" />
+              <span className="truncate">{card.label}</span>
+              <ChevronRight size={13} className="ml-auto flex-shrink-0 text-gray-300 group-hover:text-gray-500 transition-colors" />
             </p>
+            <p className={`mt-1.5 text-2xl font-bold tracking-tight tabular-nums whitespace-nowrap ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>
+              {loading ? <span className="skeleton block h-7 w-20" /> : card.value}
+            </p>
+            <p className="mt-1 text-xs text-gray-400 line-clamp-2">{loading ? '' : card.sub}</p>
           </Link>
         ))}
       </div>

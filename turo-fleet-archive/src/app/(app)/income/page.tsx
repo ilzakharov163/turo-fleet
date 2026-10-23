@@ -5,15 +5,17 @@ import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
 import {
-  ChevronLeft, ChevronRight, ChevronDown, Plus, X, Trash2, Send, Copy, Check, Download,
+  ChevronDown, Plus, X, Trash2, Send, Copy, Check, Download,
   TrendingUp, TrendingDown, CarFront, Link2, ArrowUpRight, ArrowDownRight, FileJson, FileSpreadsheet,
-  Wallet, Receipt, Wrench, Archive, Pencil, RotateCcw,
+  Archive, Pencil, RotateCcw,
 } from 'lucide-react'
 import {
   format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addMonths, subMonths,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ask, notify } from '@/lib/ui'
+import MonthPicker from '@/components/ui/MonthPicker'
+import Popover from '@/components/ui/Popover'
 import { canAny, useAccess } from '@/lib/access'
 import { removeCarFrom, restoreCar } from '@/lib/fleet'
 import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
@@ -77,6 +79,10 @@ const COLORS = [
   { dot: 'bg-sky-500', soft: 'bg-sky-50 text-sky-700', ring: 'hover:border-sky-200' },
   { dot: 'bg-rose-500', soft: 'bg-rose-50 text-rose-700', ring: 'hover:border-rose-200' },
   { dot: 'bg-violet-500', soft: 'bg-violet-50 text-violet-700', ring: 'hover:border-violet-200' },
+  { dot: 'bg-teal-500', soft: 'bg-teal-50 text-teal-700', ring: 'hover:border-teal-200' },
+  { dot: 'bg-orange-500', soft: 'bg-orange-50 text-orange-700', ring: 'hover:border-orange-200' },
+  { dot: 'bg-pink-500', soft: 'bg-pink-50 text-pink-700', ring: 'hover:border-pink-200' },
+  { dot: 'bg-lime-500', soft: 'bg-lime-50 text-lime-700', ring: 'hover:border-lime-200' },
 ]
 
 // ── Выгрузка ──
@@ -318,7 +324,7 @@ function CarDrawer({
 }
 
 // ── Расходы компании (автосохранение) ──
-function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; period: string; payroll: number; onSave: (m: MonthExp) => Promise<boolean> }) {
+function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { value: MonthExp; period: string; payroll: number; deductionsTotal: number; onSave: (m: MonthExp) => Promise<boolean> }) {
   const [s1, setS1] = useState(value.salary1 ? String(value.salary1) : '')
   const [s2, setS2] = useState(value.salary2 ? String(value.salary2) : '')
   const [items, setItems] = useState(value.items.map(i => ({ desc: i.desc, amount: i.amount ? String(i.amount) : '' })))
@@ -384,7 +390,7 @@ function ExpensesPanel({ value, period, payroll, onSave }: { value: MonthExp; pe
           </label>
           {payroll > 0 && (
             <div className="rounded-2xl bg-indigo-50 p-3 text-sm">
-              <p className="text-indigo-900">По календарю простоев работнику положено <b>{money(payroll)}</b></p>
+              <p className="text-indigo-900">По календарю простоев работнику положено <b>{money(payroll)}</b>{deductionsTotal > 0 && <> (с учётом вычетов {money(deductionsTotal)})</>}</p>
               <button type="button" onClick={() => setS2(String(payroll))} className="mt-1.5 text-xs font-semibold text-indigo-700 hover:underline">Подставить в «Зарплата»</button>
             </div>
           )}
@@ -573,10 +579,10 @@ export default function IncomePage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [addCar, setAddCar] = useState(false)
+  const [deductions, setDeductions] = useState<{ date: string; amount: number }[]>([])
   // Аккаунт: новый или редактирование (key задан)
   const [accForm, setAccForm] = useState<{ key: string | null; label: string; from: string; until: string } | null>(null)
   const [newCarId, setNewCarId] = useState('')
-  const stripRef = useRef<HTMLDivElement>(null)
 
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(t => (t === msg ? null : t)), 2200) }
 
@@ -591,13 +597,15 @@ export default function IncomePage() {
       supabase.from('revenue_payments').select('*').order('sort'),
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date'),
+      supabase.from('salary_deductions').select('date, amount'),
     ])
     let res = await fetchAll()
     for (let i = 0; i < 2 && res.some(r => r.error); i++) {
       await new Promise(r => setTimeout(r, 700))
       res = await fetchAll()
     }
-    const [a, c, e, m, pay, f, b] = res
+    const [a, c, e, m, pay, f, b, d] = res
+    setDeductions((d.data as { date: string; amount: number }[]) || [])
     setAccounts((a.data as Account[]) || [])
     // Название машины — из «Авто» (марка и модель), номер показывается отдельно; своё название только у непривязанных
     setRcars(((c.data as RCar[]) || []).map(r => r.car ? { ...r, name: `${r.car.make} ${r.car.model}` } : r))
@@ -638,7 +646,9 @@ export default function IncomePage() {
   }, [accounts])
 
   const carsIn = useCallback((acc: string, p: string) =>
-    rcars.filter(c => c.account === acc && (carVisible(c, p) || entryOf(c.id, p))), [rcars, entryOf])
+    rcars.filter(c => c.account === acc && (carVisible(c, p) || entryOf(c.id, p)))
+      // По алфавиту: марка и модель, затем номер — одинаковые модели идут подряд
+      .sort((x, y) => x.name.localeCompare(y.name, 'ru') || (x.car?.plate || '').localeCompare(y.car?.plate || '')), [rcars, entryOf])
   const accountsIn = useCallback((p: string) =>
     accounts.filter(a => accActive(a, p) || rcars.some(c => c.account === a.key && entryOf(c.id, p))), [accounts, rcars, entryOf])
   const accTotals = useCallback((acc: string, p: string) =>
@@ -665,13 +675,9 @@ export default function IncomePage() {
   }, [entries, monthExp, curPeriod, period])
   const monthStats = useMemo(() => months.map(p => ({ p, ...monthSummary(p) })), [months, monthSummary])
 
-  useEffect(() => {
-    const strip = stripRef.current
-    const el = strip?.querySelector('[data-active="true"]') as HTMLElement | null
-    if (strip && el) strip.scrollTo({ left: el.offsetLeft - strip.offsetLeft - (strip.clientWidth - el.offsetWidth) / 2, behavior: 'smooth' })
-  }, [period, loading])
 
   const sum = monthSummary(period)
+  const monthDeductions = deductions.filter(x => x.date.startsWith(period.slice(0, 7))).reduce((t, x) => t + n(x.amount), 0)
   const prevSum = monthSummary(pKey(subMonths(month, 1)))
   const delta = prevSum.has ? sum.profit - prevSum.profit : null
 
@@ -956,11 +962,18 @@ export default function IncomePage() {
 
   return (
     <div className="space-y-5 pb-6 min-w-0">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-gray-500">Доход по аккаунтам Turo, клеймы, расходы и чистая прибыль</p>
+      {/* Месяц и выгрузка */}
+      <div className="flex items-center justify-between gap-2">
+        <MonthPicker
+          value={period.slice(0, 7)}
+          onChange={v => setMonth(parseISO(`${v}-01`))}
+          min={(monthStats[0]?.p || period).slice(0, 7)}
+          max={(monthStats[monthStats.length - 1]?.p || period).slice(0, 7)}
+          hint={v => { const st = monthStats.find(x => x.p === `${v}-01`); return st?.has ? { text: moneyShort(st.profit), tone: st.profit < 0 ? 'neg' : 'pos' } : null }}
+          badge={period === curPeriod ? <span className="ml-1.5 text-[11px] font-medium text-gray-400">сейчас</span> : null}
+        />
         <div className="relative">
-          <button onClick={() => setExportOpen(o => !o)} className={btnGhost}><Download size={15} /> Выгрузить <ChevronDown size={14} className="text-gray-400" /></button>
+          <button onClick={() => setExportOpen(o => !o)} className={`${btnGhost} h-10`} aria-label="Выгрузить"><Download size={15} /><span className="hidden sm:inline">Выгрузить</span> <ChevronDown size={14} className="text-gray-400" /></button>
           {exportOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setExportOpen(false)} />
@@ -983,55 +996,48 @@ export default function IncomePage() {
         </div>
       </div>
 
-      {/* Лента месяцев */}
-      <div className="flex items-center gap-2">
-        <button onClick={() => setMonth(m => subMonths(m, 1))} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 flex-shrink-0" aria-label="Предыдущий месяц"><ChevronLeft size={16} /></button>
-        <div ref={stripRef} className="flex-1 min-w-0 flex gap-2 overflow-x-auto py-0.5" style={{ scrollbarWidth: 'none' }}>
-          {monthStats.map(s => {
-            const active = s.p === period
-            return (
-              <button key={s.p} data-active={active} onClick={() => setMonth(parseISO(s.p))}
-                className={`flex-shrink-0 min-w-[96px] rounded-2xl border px-3 py-2 text-left transition-colors ${active ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
-                <span className={`block text-xs font-medium ${active ? 'text-white/70' : 'text-gray-500'}`}>{monthName(s.p, 'LLLL')}{s.p === curPeriod ? ' · сейчас' : ''}</span>
-                <span className={`block text-sm font-bold tabular-nums ${!s.has ? (active ? 'text-white/50' : 'text-gray-300') : s.profit < 0 ? (active ? 'text-red-300' : 'text-red-600') : (active ? 'text-emerald-300' : 'text-emerald-600')}`}>
-                  {s.has ? moneyShort(s.profit) : '—'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-        <button onClick={() => setMonth(m => addMonths(m, 1))} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-500 hover:bg-gray-50 flex-shrink-0" aria-label="Следующий месяц"><ChevronRight size={16} /></button>
-      </div>
-
-      {/* Вкладки */}
-      <div className="-mx-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-        <div className="flex gap-1.5 px-1 min-w-max">
-          <button onClick={() => setView('summary')} className={`px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'summary' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>Сводка</button>
-          <button onClick={() => setView('gross')} className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border transition-colors ${view === 'gross' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
-            <Wallet size={14} /> Ввод Gross
-            {!loading && grossRows.length > 0 && <span className={`text-xs tabular-nums ${view === 'gross' ? 'text-white/80' : 'text-emerald-600/70'}`}>{grossFilled}/{grossRows.length}</span>}
-          </button>
-          {sum.accs.map(x => (
-            <button key={x.a.key} onClick={() => setView(x.a.key)}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === x.a.key ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
-              <span className={`w-2 h-2 rounded-full ${colorOf(x.a.key).dot}`} />
-              {x.a.label}
-              {!loading && <span className={`text-xs tabular-nums ${view === x.a.key ? 'text-white/75' : x.t.net < 0 ? 'text-red-500' : 'text-gray-400'}`}>{moneyShort(x.t.net)}</span>}
+      {/* Вкладки: одна аккуратная полоса; аккаунты — в выпадающем меню */}
+      {(() => {
+        const accActiveView = sum.accs.find(x => x.a.key === view)
+        const seg = (on: boolean) => `inline-flex items-center gap-1.5 h-9 px-3 sm:px-3.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${on ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`
+        return (
+          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-full sm:w-fit overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            <button onClick={() => setView('summary')} className={seg(view === 'summary')}>Сводка</button>
+            <button onClick={() => setView('gross')} className={seg(view === 'gross')}>
+              Gross
+              {!loading && grossRows.length > 0 && <span className={`text-xs tabular-nums ${grossFilled === grossRows.length ? 'text-emerald-600' : 'text-gray-400'}`}>{grossFilled}/{grossRows.length}</span>}
             </button>
-          ))}
-          <button onClick={openNewAccount} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-dashed border-gray-300 text-gray-500 hover:text-[#4F46E5] hover:border-indigo-300 transition-colors" title="Добавить аккаунт">
-            <Plus size={14} /> Аккаунт
-          </button>
-          <button onClick={() => setView('expenses')} className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'expenses' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
-            <Receipt size={14} /> Расходы
-            {!loading && <span className={`text-xs tabular-nums ${view === 'expenses' ? 'text-white/75' : 'text-gray-400'}`}>{moneyShort(sum.expenses)}</span>}
-          </button>
-          <button onClick={() => setView('payments')} className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'payments' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
-            <Wallet size={14} /> Платежи
-            {!loading && <span className={`text-xs tabular-nums ${view === 'payments' ? 'text-white/75' : 'text-gray-400'}`}>{moneyShort(sum.pays)}</span>}
-          </button>
-        </div>
-      </div>
+            <Popover
+              panelClass="sm:w-72"
+              trigger={(open, toggle) => (
+                <button onClick={toggle} className={seg(!!accActiveView || open)}>
+                  {accActiveView && <span className={`w-2 h-2 rounded-full ${colorOf(accActiveView.a.key).dot}`} />}
+                  {accActiveView ? accActiveView.a.label : 'Аккаунты'}
+                  <ChevronDown size={14} className="text-gray-400" />
+                </button>
+              )}
+            >
+              {close => (
+                <div className="p-2">
+                  {sum.accs.map(x => (
+                    <button key={x.a.key} onClick={() => { setView(x.a.key); close() }}
+                      className={`w-full flex items-center gap-3 px-3 h-11 rounded-xl text-left text-sm ${view === x.a.key ? 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 font-semibold' : 'text-gray-800 hover:bg-gray-50'}`}>
+                      <span className={`w-2.5 h-2.5 rounded-full ${colorOf(x.a.key).dot}`} />
+                      <span className="flex-1 min-w-0 truncate">{x.a.label} <span className="text-xs font-normal text-gray-400">· {x.cars}</span></span>
+                      <span className={`text-xs tabular-nums ${x.t.net < 0 ? 'text-red-500' : 'text-gray-500'}`}>{moneyShort(x.t.net)}</span>
+                    </button>
+                  ))}
+                  <button onClick={() => { close(); openNewAccount() }} className="mt-1 w-full flex items-center gap-2 px-3 h-11 rounded-xl text-sm font-medium text-[#4F46E5] dark:text-indigo-300 hover:bg-indigo-50">
+                    <Plus size={15} /> Новый аккаунт
+                  </button>
+                </div>
+              )}
+            </Popover>
+            <button onClick={() => setView('expenses')} className={seg(view === 'expenses')}>Расходы</button>
+            <button onClick={() => setView('payments')} className={seg(view === 'payments')}>Платежи</button>
+          </div>
+        )
+      })()}
 
       {loading ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -1078,7 +1084,7 @@ export default function IncomePage() {
           <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
             <div className="flex items-center justify-between px-4 sm:px-5 py-3.5">
               <h2 className="text-base font-bold text-gray-900">По аккаунтам</h2>
-              <span className="text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
+              <span className="hidden sm:inline text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] border-collapse text-[15px] sm:text-sm tabular-nums">
@@ -1234,7 +1240,7 @@ export default function IncomePage() {
           prevCount={payments.filter(x => x.period === pKey(subMonths(month, 1))).length} prevLabel={monthName(pKey(subMonths(month, 1)), 'LLLL').toLowerCase()}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment} onCopyPrev={copyPrevPayments} />
       ) : view === 'expenses' ? (
-        <ExpensesPanel key={period} period={period} payroll={payroll} onSave={saveExpenses}
+        <ExpensesPanel key={period} period={period} payroll={Math.max(0, payroll - monthDeductions)} deductionsTotal={monthDeductions} onSave={saveExpenses}
           value={sum.exp || { period, salary1: 0, salary2: 0, items: [] }} />
       ) : view === 'gross' ? (
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">

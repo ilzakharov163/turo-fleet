@@ -52,3 +52,6 @@ select cron.schedule('daily-backup', '0 10 * * *', $$select public.make_backup('
 
 -- 23.10.2026, миграция cars_removed_from: с какого месяца машины нет в парке (продана/разбита)
 alter table public.cars add column if not exists removed_from date;
+
+-- 23.10.2026, миграция salary_deductions: вычеты из зарплаты работника (date, reason, amount, car_id).
+-- RLS: читают /cars,/dashboard,/reports,/income; пишут /cars. Таблица добавлена в make_backup.

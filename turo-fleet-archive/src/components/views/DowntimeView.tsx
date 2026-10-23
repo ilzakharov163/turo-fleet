@@ -31,15 +31,20 @@ export default function DowntimeView() {
   const [form, setForm] = useState({ car_id: '', start_date: '', end_date: '', reason: '' })
   const [editBlock, setEditBlock] = useState<CarBlock | null>(null)
   const [copied, setCopied] = useState(false)
+  // Вычеты из зарплаты (записываются по ходу месяца)
+  const [deductions, setDeductions] = useState<{ id: string; date: string; reason: string; amount: number }[]>([])
+  const [ded, setDed] = useState({ date: format(new Date(), 'yyyy-MM-dd'), reason: '', amount: '' })
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [carsRes, blocksRes] = await Promise.all([
+    const [carsRes, blocksRes, dedRes] = await Promise.all([
       supabase.from('cars').select('*').order('make'),
       supabase.from('car_blocks').select('*, car:cars(*)'),
+      supabase.from('salary_deductions').select('id, date, reason, amount').order('date').order('created_at'),
     ])
     setCars(carsRes.data || [])
     setBlocks(blocksRes.data as CarBlock[] || [])
+    setDeductions(dedRes.data || [])
   }, [])
 
 
@@ -102,6 +107,32 @@ export default function DowntimeView() {
   const halfRows = payrollRows.filter(r => r.salary === 75)
   const zeroRows = payrollRows.filter(r => r.salary === 0)
 
+  // ── Вычеты ──
+  const monthKey = format(currentMonth, 'yyyy-MM')
+  const monthDeds = deductions.filter(d => d.date.startsWith(monthKey))
+  const dedTotal = monthDeds.reduce((s, d) => s + Number(d.amount), 0)
+  const toPay = totalSalary - dedTotal
+  const usd2 = (v: number) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+
+  async function addDeduction(e: React.FormEvent) {
+    e.preventDefault()
+    const amount = parseFloat(ded.amount.replace(',', '.'))
+    if (!ded.reason.trim() || !(amount > 0)) return
+    const { data, error } = await createClient().from('salary_deductions').insert({ date: ded.date, reason: ded.reason.trim(), amount }).select('id').single()
+    if (error) return
+    await log('create', 'salary_deduction', data?.id || '', { date: ded.date, reason: ded.reason.trim(), amount })
+    notify('Вычет записан', 'success')
+    setDed(d => ({ ...d, reason: '', amount: '' }))
+    load()
+  }
+  async function deleteDeduction(d: { id: string; date: string; reason: string; amount: number }) {
+    if (!await ask('Удалить вычет?', { detail: `${d.reason} · ${usd2(d.amount)}`, ok: 'Удалить', danger: true })) return
+    const { error } = await createClient().from('salary_deductions').delete().eq('id', d.id)
+    if (error) return
+    await log('delete', 'salary_deduction', d.id, { reason: d.reason, amount: d.amount })
+    load()
+  }
+
   function payrollText() {
     const monthLabel = format(currentMonth, 'LLLL yyyy', { locale: ru })
     const name = (r: PayrollRow) => `${r.car.make} ${r.car.model} ${r.car.plate}`
@@ -121,7 +152,12 @@ export default function DowntimeView() {
       zeroRows.forEach(r => lines.push(`• ${name(r)}`))
       lines.push('')
     }
-    lines.push(`Итого: $${totalSalary}`)
+    lines.push(`Итого по машинам: $${totalSalary}`)
+    if (monthDeds.length) {
+      lines.push('', `➖ Вычеты: −${usd2(dedTotal)}`)
+      monthDeds.forEach(d => lines.push(`• ${format(parseISO(d.date), 'd MMM', { locale: ru })} — ${d.reason} — ${usd2(d.amount)}`))
+      lines.push('', `💰 К выплате: ${usd2(toPay)}`)
+    }
     return lines.join('\n')
   }
 
@@ -150,7 +186,14 @@ export default function DowntimeView() {
       ['Авто', 'Номер', 'Дней работы', 'Дней простоя', 'Зарплата, $'],
       ...payrollRows.map(r => [`${r.car.make} ${r.car.model}`, r.car.plate, totalDays - r.inactiveDays, r.inactiveDays, r.salary]),
       [],
-      ['Итого', '', '', '', totalSalary],
+      ['Итого по машинам', '', '', '', totalSalary],
+      ...(monthDeds.length ? [
+        [],
+        ['Вычеты', 'Дата', 'За что', '', 'Сумма, $'],
+        ...monthDeds.map(d => ['', d.date, d.reason, '', -Number(d.amount)]),
+        ['Итого вычетов', '', '', '', -dedTotal],
+        ['К выплате', '', '', '', toPay],
+      ] : []),
     ]
     const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -311,6 +354,10 @@ export default function DowntimeView() {
             <span className="text-yellow-600 font-semibold">{halfRows.length} × $75</span>
             <span className="text-red-500 font-semibold">{zeroRows.length} × $0</span>
             <span className="text-gray-900 font-bold">= ${totalSalary}</span>
+            {dedTotal > 0 && <>
+              <span className="text-rose-500 font-semibold">− вычеты {usd2(dedTotal)}</span>
+              <span className="text-gray-900 font-bold">к выплате {usd2(toPay)}</span>
+            </>}
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={sharePayroll} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[#229ED9] hover:bg-[#1c8cc2] text-white text-sm font-medium transition-colors">
@@ -347,11 +394,51 @@ export default function DowntimeView() {
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={3} className="pt-3 font-semibold text-gray-700">Итого</td>
+              <td colSpan={3} className="pt-3 font-semibold text-gray-700">Итого по машинам</td>
               <td className="pt-3 text-right font-bold text-gray-900">${totalSalary}</td>
             </tr>
           </tfoot>
         </table>
+
+        {/* Вычеты — записываются по ходу месяца, вычитаются из итога */}
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <div className="flex items-baseline justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold text-gray-900">Вычеты за {format(currentMonth, 'LLLL', { locale: ru })}</h3>
+            {dedTotal > 0 && <span className="text-sm font-semibold text-rose-500 tabular-nums">−{usd2(dedTotal)}</span>}
+          </div>
+          {monthDeds.length > 0 ? (
+            <ul className="divide-y divide-gray-100 mb-4">
+              {monthDeds.map((d, i) => (
+                <li key={d.id} className="flex items-center gap-3 py-2.5 text-sm">
+                  <span className="w-6 text-xs text-gray-400 tabular-nums">{i + 1}.</span>
+                  <span className="w-16 flex-shrink-0 text-xs text-gray-500 tabular-nums">{format(parseISO(d.date), 'd MMM', { locale: ru })}</span>
+                  <span className="flex-1 min-w-0 text-gray-800 break-words">{d.reason}</span>
+                  <span className="font-semibold text-rose-500 tabular-nums">−{usd2(d.amount)}</span>
+                  <button onClick={() => deleteDeduction(d)} className="w-8 h-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center" aria-label="Удалить вычет"><X size={15} /></button>
+                </li>
+              ))}
+              <li className="flex items-center justify-between py-2.5 text-sm font-semibold">
+                <span className="text-gray-700">К выплате</span>
+                <span className="text-gray-900 tabular-nums">{usd2(toPay)}</span>
+              </li>
+            </ul>
+          ) : <p className="text-sm text-gray-400 mb-4">Вычетов в этом месяце нет</p>}
+          <form onSubmit={addDeduction} className="grid grid-cols-2 sm:grid-cols-[150px_1fr_120px_auto] gap-2 items-end">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Дата</label>
+              <DatePicker value={ded.date} onChange={v => setDed(f => ({ ...f, date: v }))} />
+            </div>
+            <div className="col-span-2 sm:col-span-1 order-first sm:order-none">
+              <label className="block text-xs text-gray-500 mb-1">За что</label>
+              <input value={ded.reason} onChange={e => setDed(f => ({ ...f, reason: e.target.value }))} placeholder="Например, не помыл машину" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Сумма, $</label>
+              <input value={ded.amount} onChange={e => setDed(f => ({ ...f, amount: e.target.value }))} inputMode="decimal" placeholder="0" className={inputCls} />
+            </div>
+            <button type="submit" disabled={!ded.reason.trim() || !ded.amount} className="btn-primary h-11 px-4 col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5"><Plus size={15} /> Вычет</button>
+          </form>
+        </div>
 
       </div>
 

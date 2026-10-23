@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react'
 import { format, addMonths, subMonths, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -11,13 +11,15 @@ import Popover from './Popover'
 const MONTHS = Array.from({ length: 12 }, (_, i) => format(new Date(2026, i, 1), 'LLL', { locale: ru }).replace('.', ''))
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-export default function MonthPicker({ value, onChange, min, max, allLabel, className = '' }: {
+export default function MonthPicker({ value, onChange, min, max, allLabel, className = '', hint, badge }: {
   value: string
   onChange: (v: string) => void
   min: string        // 'yyyy-MM'
   max: string        // 'yyyy-MM'
   allLabel?: string  // если задан — есть пункт «весь период»
   className?: string
+  hint?: (v: string) => { text: string; tone?: 'pos' | 'neg' } | null   // строка под месяцем в сетке (например, прибыль)
+  badge?: ReactNode                 // рядом с названием выбранного месяца
 }) {
   const cur = value === 'all' ? max : value
   const [year, setYear] = useState(Number(cur.slice(0, 4)))
@@ -34,7 +36,7 @@ export default function MonthPicker({ value, onChange, min, max, allLabel, class
         panelClass="sm:w-72"
         trigger={(open, toggle) => (
           <button onClick={() => { setYear(Number(cur.slice(0, 4))); toggle() }} className={`h-10 px-1.5 inline-flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap ${open ? 'text-[#4F46E5]' : 'text-gray-900'}`}>
-            {label} <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+            {label}{badge} <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
           </button>
         )}
       >
@@ -52,8 +54,14 @@ export default function MonthPicker({ value, onChange, min, max, allLabel, class
                 const active = v === value
                 return (
                   <button key={v} disabled={off} onClick={() => { onChange(v); close() }}
-                    className={`h-11 rounded-xl text-sm font-medium capitalize transition-colors ${active ? 'bg-[#4F46E5] text-white' : off ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-100'}`}>
+                    className={`${hint ? 'h-14' : 'h-11'} rounded-xl text-sm font-medium capitalize transition-colors flex flex-col items-center justify-center leading-tight ${active ? 'bg-[#4F46E5] text-white' : off ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-100'}`}>
                     {m}
+                    {(() => {
+                      const h = hint && !off ? hint(v) : null
+                      if (!h) return null
+                      const tone = active ? 'text-white/85' : h.tone === 'neg' ? 'text-red-500' : h.tone === 'pos' ? 'text-emerald-600' : 'text-gray-400'
+                      return <span className={`text-[11px] font-semibold tabular-nums normal-case ${tone}`}>{h.text}</span>
+                    })()}
                   </button>
                 )
               })}
