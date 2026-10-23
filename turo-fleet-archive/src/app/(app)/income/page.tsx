@@ -575,7 +575,6 @@ export default function IncomePage() {
   const [addCar, setAddCar] = useState(false)
   // Аккаунт: новый или редактирование (key задан)
   const [accForm, setAccForm] = useState<{ key: string | null; label: string; from: string; until: string } | null>(null)
-  const [newName, setNewName] = useState('')
   const [newCarId, setNewCarId] = useState('')
   const stripRef = useRef<HTMLDivElement>(null)
 
@@ -600,7 +599,8 @@ export default function IncomePage() {
     }
     const [a, c, e, m, pay, f, b] = res
     setAccounts((a.data as Account[]) || [])
-    setRcars((c.data as RCar[]) || [])
+    // Название машины — из «Авто» (марка и модель), номер показывается отдельно; своё название только у непривязанных
+    setRcars(((c.data as RCar[]) || []).map(r => r.car ? { ...r, name: `${r.car.make} ${r.car.model}` } : r))
     setEntries(((e.data as Entry[]) || []).map(x => ({ ...x, gross: n(x.gross), repair: n(x.repair) })))
     let payList = ((pay.data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))
     // Платежи переходят из месяца в месяц: если в текущем месяце их нет — копируем последний список
@@ -777,13 +777,15 @@ export default function IncomePage() {
     return true
   }
   async function createCar() {
-    if (!newName.trim() || view === 'summary' || view === 'expenses') return
+    const f = fleet.find(x => x.id === newCarId)
+    if (!f || view === 'summary' || view === 'expenses') return
     const supabase = createClient()
     const sort = Math.max(-1, ...rcars.filter(c => c.account === view).map(c => c.sort)) + 1
-    const { data, error } = await supabase.from('revenue_cars').insert({ account: view, name: newName.trim(), car_id: newCarId || null, added_from: period, sort }).select('id').single()
+    const name = `${f.make} ${f.model} ${f.plate}`
+    const { data, error } = await supabase.from('revenue_cars').insert({ account: view, name, car_id: f.id, added_from: period, sort }).select('id').single()
     if (error) { return }
-    await log('create', 'revenue_car', newName.trim(), { account: view, from: period })
-    setAddCar(false); setNewName(''); setNewCarId('')
+    await log('create', 'revenue_car', name, { account: view, from: period })
+    setAddCar(false); setNewCarId('')
     await load()
     if (data?.id) setDrawer(data.id)
   }
@@ -1192,7 +1194,7 @@ export default function IncomePage() {
                       <button onClick={() => setDrawer(r.c.id)} className="flex w-full items-center gap-3 px-5 py-2 text-left hover:bg-gray-50">
                         <span className="w-5 text-xs font-semibold text-gray-300 tabular-nums">{i + 1}</span>
                         <span className={`w-2 h-2 rounded-full ${colorOf(r.a.key).dot}`} />
-                        <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.c.name} <span className="text-gray-400">· {r.a.label}</span></span>
+                        <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.c.name}{r.c.car ? <span className="font-mono text-xs text-gray-500"> {r.c.car.plate}</span> : null} <span className="text-gray-400">· {r.a.label}</span></span>
                         <span className="text-sm font-semibold tabular-nums text-gray-900">{money(r.t.net)}</span>
                       </button>
                     </li>
@@ -1210,7 +1212,7 @@ export default function IncomePage() {
                       <li key={r.c.id}>
                         <button onClick={() => setDrawer(r.c.id)} className="flex w-full items-center gap-3 px-5 py-2 text-left hover:bg-gray-50">
                           <span className={`w-2 h-2 rounded-full ${colorOf(r.a.key).dot}`} />
-                          <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.c.name} <span className="text-gray-400">· {r.a.label}</span></span>
+                          <span className="min-w-0 flex-1 truncate text-sm text-gray-800">{r.c.name}{r.c.car ? <span className="font-mono text-xs text-gray-500"> {r.c.car.plate}</span> : null} <span className="text-gray-400">· {r.a.label}</span></span>
                           <span className="text-sm font-semibold tabular-nums text-red-600">{money(r.t.net)}</span>
                         </button>
                       </li>
@@ -1271,7 +1273,7 @@ export default function IncomePage() {
                       <div className="min-w-0">
                         <p className="truncate text-[15px] sm:text-sm font-medium text-gray-900">{r.c.name}</p>
                         <p className="truncate text-xs text-gray-400">
-                          {r.c.car?.plate}
+                          <span className="font-mono font-semibold text-gray-600">{r.c.car?.plate}</span>
                           {/* На телефоне прошлый месяц — под названием */}
                           {prev && n(prev.gross) ? <span className="sm:hidden">{r.c.car ? ' · ' : ''}было {money(n(prev.gross))}</span> : null}
                         </p>
@@ -1336,7 +1338,7 @@ export default function IncomePage() {
                         <td className="sticky left-0 z-10 border-b border-r border-gray-200 bg-white group-hover:bg-indigo-50/40 group-focus-within:bg-indigo-50 px-4 py-1.5">
                           <button onClick={() => setDrawer(c.id)} className="text-left" title="Подробнее: несколько клеймов, прочие расходы, история">
                             <span className="block font-medium text-gray-900 hover:text-indigo-600">{c.name}</span>
-                            <span className="block text-[11px] text-gray-400">{c.car?.plate || 'не привязана'}</span>
+                            <span className={`block text-[11px] font-mono ${c.car ? 'font-semibold text-gray-600' : 'text-gray-400'}`}>{c.car?.plate || 'не привязана'}</span>
                           </button>
                         </td>
                         <td className={`${cell} w-[120px]`}><NumCell grid={grid} row={ri} col={0} value={n(e?.gross)} strong onCommit={v => patchEntry(c.id, x => ({ ...x, gross: v }))} /></td>
@@ -1400,27 +1402,20 @@ export default function IncomePage() {
         <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) setAddCar(false) }}>
           <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
             <div>
-              <h2 className="text-lg font-semibold">Новая машина</h2>
-              <p className="text-sm text-gray-400">{activeAcc.a.label} · с {monthName(period)}</p>
+              <h2 className="text-lg font-bold text-gray-900">Новая машина</h2>
+              <p className="text-sm text-gray-500">{activeAcc.a.label} · с {format(month, 'MMMM yyyy', { locale: ru })}</p>
             </div>
             <label className="block">
-              <span className="block text-sm font-medium text-gray-700 mb-1">Авто из парка</span>
-              <select id="income-new-car" value={newCarId} onChange={e => {
-                setNewCarId(e.target.value)
-                const f = fleet.find(x => x.id === e.target.value)
-                if (f && !newName) setNewName(`${f.model} ${f.plate.slice(-3)}`)
-              }} className={inputCls}>
-                <option value="">— не привязывать —</option>
-                {freeFleet.map(f => <option key={f.id} value={f.id}>{f.make} {f.model} {f.plate}</option>)}
+              <span className="block text-sm font-medium text-gray-700 mb-1">Машина из «Авто»</span>
+              <select id="income-new-car" autoFocus value={newCarId} onChange={e => setNewCarId(e.target.value)} className={inputCls}>
+                <option value="">Выберите машину…</option>
+                {freeFleet.filter(f => inFleet(f, period)).map(f => <option key={f.id} value={f.id}>{f.make} {f.model} {f.plate}</option>)}
               </select>
             </label>
-            <label className="block">
-              <span className="block text-sm font-medium text-gray-700 mb-1">Название</span>
-              <input id="income-new-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Например, Camry 897" className={inputCls} />
-            </label>
+            <p className="text-xs text-gray-500">Название и номер берутся из «Авто». Нет нужной машины — сначала добавьте её в «Авто → Машины».</p>
             <div className="flex gap-3 pt-1">
               <button onClick={() => setAddCar(false)} className="btn-secondary flex-1 h-11">Отмена</button>
-              <button onClick={createCar} disabled={!newName.trim()} className="btn-primary flex-1 h-11">Добавить</button>
+              <button onClick={createCar} disabled={!newCarId} className="btn-primary flex-1 h-11">Добавить</button>
             </div>
           </div>
         </div>
