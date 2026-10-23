@@ -1,6 +1,10 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@layer base {
+  *, ::before, ::after { border-color: var(--color-gray-200); }
+}
+
 :root {
   --background: #F4F5F9;
   --foreground: #1A1D23;

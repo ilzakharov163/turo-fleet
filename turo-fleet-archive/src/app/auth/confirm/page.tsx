@@ -85,7 +85,7 @@ export default function ConfirmPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+            className="btn-primary w-full h-11"
           >
             {loading ? 'Сохраняем...' : 'Создать пароль и войти'}
           </button>

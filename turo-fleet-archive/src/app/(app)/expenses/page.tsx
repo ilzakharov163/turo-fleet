@@ -254,9 +254,9 @@ export default function ExpensesPage() {
   }
 
   return (
-    <div className="sm:p-8">
-      <div className="flex items-center justify-end sm:justify-between gap-3 mb-5 sm:mb-6">
-        <h1 className="hidden sm:block text-xl font-bold text-gray-900">Расходы</h1>
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <p className="hidden sm:block text-sm text-gray-500">Расходы по машинам и чеки</p>
         <button
           onClick={openNew}
           className="btn-primary flex items-center gap-2 px-4 py-2"

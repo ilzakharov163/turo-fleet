@@ -7,7 +7,6 @@ import { LayoutDashboard, Car, DollarSign, LogOut, FileText, Wallet, LayoutGrid,
 import { createClient } from '@/lib/supabase'
 import { canAny, useAccess } from '@/lib/access'
 import { useRouter } from 'next/navigation'
-import Logo from '@/components/ui/Logo'
 
 // access — галочки из «Команды», дающие доступ к разделу (хотя бы одна); [] — всем
 const nav = [
@@ -52,51 +51,47 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Desktop sidebar — hidden on mobile */}
-      <aside className="hidden sm:flex fixed left-0 top-0 h-screen w-[72px] bg-white border-r border-gray-100 flex-col items-center py-5 z-40 shadow-sm">
-        {/* Logo */}
-        <div className="mb-5 mt-1">
-          <Logo size={48} />
-        </div>
+      {/* Боковое меню: планшет — только значки, компьютер — значки с подписями */}
+      <aside className="hidden sm:flex fixed left-0 top-0 h-screen w-[72px] lg:w-[232px] bg-white border-r border-gray-100 flex-col py-5 z-40">
+        <Link href="/dashboard" className="flex items-center gap-3 px-3 lg:px-5 mb-7">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="" width={44} height={44} className="w-11 h-11 rounded-[14px] border border-gray-100 flex-shrink-0 mx-auto lg:mx-0" />
+          <span className="hidden lg:block min-w-0">
+            <span className="block text-[15px] font-bold text-gray-900 leading-tight">Fleet Manager</span>
+            <span className="block text-xs text-gray-400">Turo</span>
+          </span>
+        </Link>
 
-        {/* Nav */}
-        <nav className="flex-1 flex flex-col items-center gap-1 w-full px-2">
+        <nav className="flex-1 flex flex-col gap-1 px-3">
           {visibleNav.map(({ href, icon: Icon, label }) => {
-            const active = pathname === href
+            const active = pathname === href || pathname.startsWith(href + '/')
             return (
               <Link
                 key={href}
                 href={href}
                 title={label}
-                className={`relative group w-full flex items-center justify-center h-11 rounded-2xl transition-all duration-150 ${
-                  active
-                    ? 'bg-indigo-50 text-[#4F46E5]'
-                    : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'
+                className={`relative group flex items-center justify-center lg:justify-start gap-3 h-11 lg:px-3 rounded-xl text-sm transition-colors ${
+                  active ? 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 font-semibold' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 font-medium'
                 }`}
               >
-                <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
-                <span className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+                <Icon size={20} strokeWidth={active ? 2.2 : 1.8} className="flex-shrink-0" />
+                <span className="hidden lg:inline">{label}</span>
+                <span className="lg:hidden pointer-events-none absolute left-[calc(100%+12px)] top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50">
                   {label}
                 </span>
-                {active && (
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#4F46E5] rounded-l-full" />
-                )}
               </Link>
             )
           })}
         </nav>
 
-        {/* Logout */}
-        <div className="w-full px-2">
+        <div className="px-3">
           <button
             onClick={handleLogout}
             title="Выйти"
-            className="group relative w-full flex items-center justify-center h-11 rounded-2xl text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all duration-150"
+            className="w-full flex items-center justify-center lg:justify-start gap-3 h-11 lg:px-3 rounded-xl text-sm font-medium text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
           >
-            <LogOut size={20} strokeWidth={1.8} />
-            <span className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 -translate-y-1/2 bg-gray-900 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
-              Выйти
-            </span>
+            <LogOut size={20} strokeWidth={1.8} className="flex-shrink-0" />
+            <span className="hidden lg:inline">Выйти</span>
           </button>
         </div>
       </aside>

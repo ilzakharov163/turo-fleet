@@ -234,7 +234,7 @@ export default function StickersView() {
         </div>
         <button
           onClick={openAddModal}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          className="flex items-center gap-2 btn-primary px-4 h-10"
         >
           <Plus size={16} /> Добавить машины
         </button>
@@ -372,7 +372,7 @@ export default function StickersView() {
                 <p className="text-xs text-gray-400 mt-1">Дата применится ко всем выбранным машинам. Если не указать — они будут отмечены красным, пока не отметишь замену.</p>
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="submit" disabled={selected.length === 0} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                <button type="submit" disabled={selected.length === 0} className="flex-1 btn-primary h-11">
                   Добавить{selected.length > 0 ? ` (${selected.length})` : ''}
                 </button>
                 <button type="button" onClick={() => setShowAdd(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>

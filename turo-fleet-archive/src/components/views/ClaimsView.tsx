@@ -244,7 +244,7 @@ export default function ClaimsView() {
             {loading ? 'Загрузка…' : `${waiting.length} ждут ремонта · ${inRepair.length} в ремонте`}
           </p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+        <button onClick={openAdd} className="flex items-center gap-2 btn-primary px-4 h-10">
           <Plus size={16} /> Добавить клейм
         </button>
       </div>
@@ -355,7 +355,7 @@ export default function ClaimsView() {
                 {editClaim && (
                   <button type="button" onClick={() => handleDelete(editClaim)} className="px-4 py-2 rounded-lg border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">Удалить</button>
                 )}
-                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">Сохранить</button>
+                <button type="submit" className="flex-1 btn-primary h-11">Сохранить</button>
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
               </div>
             </form>

@@ -283,17 +283,17 @@ export default function DashboardPage() {
   return (
     <div className="space-y-5">
       {/* Stat cards — кликабельные */}
-      <div className={`grid grid-cols-2 gap-3 sm:gap-4 ${profit ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+      <div className={`grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4`}>
         {statCards.map(card => (
           <Link
             key={card.label}
             href={card.href}
-            className={`group bg-white rounded-[18px] p-4 sm:p-5 border border-gray-100/80 card-shadow hover:border-gray-200 transition-colors ${'wide' in card ? 'col-span-2 xl:col-span-1' : ''}`}
+            className={`group bg-white rounded-[18px] p-4 sm:p-5 border border-gray-100/80 card-shadow hover:border-gray-200 transition-colors ${'wide' in card ? 'col-span-2 lg:col-span-4' : ''}`}
           >
             <div className="flex items-start justify-between gap-2 mb-3">
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm text-gray-500 font-medium">{card.label}</p>
-                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? <span className="skeleton block h-8 w-20 mt-1" /> : card.value}</p>
+                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums whitespace-nowrap ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? <span className="skeleton block h-8 w-20 mt-1" /> : card.value}</p>
               </div>
               <div className={`w-10 h-10 sm:w-11 sm:h-11 flex-shrink-0 rounded-xl ${card.tint} flex items-center justify-center`}>
                 <card.icon size={20} strokeWidth={2} />
@@ -367,7 +367,7 @@ export default function DashboardPage() {
             <h2 className="text-base font-bold text-gray-900">
               Сейчас в простое {!loading && <span className="text-gray-400 font-medium">· {idle.length}</span>}
             </h2>
-            <Link href="/cars?tab=downtime" className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">
+            <Link href="/cars?tab=downtime" className="text-sm text-[#4F46E5] dark:text-indigo-300 hover:underline underline-offset-2 flex items-center gap-1 font-medium">
               Простои <ArrowRight size={14} />
             </Link>
           </div>
@@ -400,7 +400,7 @@ export default function DashboardPage() {
       <div className="bg-white rounded-[18px] border border-gray-100/80 overflow-hidden card-shadow">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-base font-bold text-gray-900">Последние расходы</h2>
-          <Link href="/expenses" className="text-sm text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium">
+          <Link href="/expenses" className="text-sm text-[#4F46E5] dark:text-indigo-300 hover:underline underline-offset-2 flex items-center gap-1 font-medium">
             Все расходы <ArrowRight size={14} />
           </Link>
         </div>

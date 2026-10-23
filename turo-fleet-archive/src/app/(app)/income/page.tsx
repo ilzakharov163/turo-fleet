@@ -7,7 +7,7 @@ import { Car } from '@/types'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Plus, X, Trash2, Send, Copy, Check, Download,
   TrendingUp, TrendingDown, CarFront, Link2, ArrowUpRight, ArrowDownRight, FileJson, FileSpreadsheet,
-  Wallet, Receipt, Wrench, Archive,
+  Wallet, Receipt, Wrench, Archive, Pencil, RotateCcw,
 } from 'lucide-react'
 import {
   format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addMonths, subMonths,
@@ -107,14 +107,14 @@ function MoneyInput({ id, value, onChange, placeholder = '0', big = false, autoF
 
 // ── Панель машины (редактор месяца) ──
 function CarDrawer({
-  rcar, accLabel, period, entry, history, lifetime, fleetOptions, onSave, onClose, onLink, onSold,
+  rcar, accLabel, period, entry, history, lifetime, fleetOptions, onSave, onClose, onLink, onSold, onUnsold,
 }: {
   rcar: RCar; accLabel: string; period: string; entry: Entry | null
   history: { p: string; net: number; has: boolean }[]
   lifetime: { net: number; gross: number; months: number }
   fleetOptions: Car[]
   onSave: (e: Entry) => Promise<boolean>; onClose: () => void
-  onLink: (carId: string) => void; onSold: () => void
+  onLink: (carId: string) => void; onSold: () => void; onUnsold: () => void
 }) {
   const base: Entry = entry || { revenue_car_id: rcar.id, period, gross: 0, repair: 0, claim_items: [], other_items: [] }
   const [gross, setGross] = useState(base.gross ? String(base.gross) : '')
@@ -292,7 +292,14 @@ function CarDrawer({
                 {fleetOptions.map(f => <option key={f.id} value={f.id}>{f.make} {f.model} {f.plate}</option>)}
               </select>
             </label>
-            <button onClick={onSold} className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-red-600"><Archive size={14} /> Машина продана — убрать со следующего месяца</button>
+            {rcar.sold_from ? (
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-orange-50 px-3 py-2 text-xs text-orange-600">
+                <span>Убрана из списка с {monthName(rcar.sold_from)}</span>
+                <button onClick={onUnsold} className="inline-flex items-center gap-1 font-semibold"><RotateCcw size={13} /> Вернуть</button>
+              </div>
+            ) : (
+              <button onClick={onSold} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 h-10 text-sm text-gray-600 hover:text-red-600 hover:border-red-200"><Archive size={15} /> Продана или разбита — убрать с {monthName(pKey(addMonths(parseISO(period), 1)), 'LLLL').toLowerCase()}</button>
+            )}
           </div>
         </div>
 
@@ -563,6 +570,8 @@ export default function IncomePage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [addCar, setAddCar] = useState(false)
+  // Аккаунт: новый или редактирование (key задан)
+  const [accForm, setAccForm] = useState<{ key: string | null; label: string; from: string; until: string } | null>(null)
   const [newName, setNewName] = useState('')
   const [newCarId, setNewCarId] = useState('')
   const stripRef = useRef<HTMLDivElement>(null)
@@ -777,7 +786,7 @@ export default function IncomePage() {
   }
   async function markSold(c: RCar) {
     const next = pKey(addMonths(month, 1))
-    if (!await ask(`${c.name}: убрать из списка начиная с ${monthName(next)}?`, { detail: 'Данные за прошлые месяцы сохранятся.', ok: 'Убрать' })) return
+    if (!await ask(`${c.name}: убрать из списка начиная с ${monthName(next)}?`, { detail: `В ${monthName(period, 'LLLL')} машина останется — можно внести Gross. Данные прошлых месяцев сохранятся, вернуть можно в этой же панели.`, ok: 'Убрать' })) return
     const supabase = createClient()
     const { error } = await supabase.from('revenue_cars').update({ sold_from: next }).eq('id', c.id)
     if (error) { return }
@@ -785,6 +794,39 @@ export default function IncomePage() {
     setDrawer(null)
     load()
   }
+  async function unSold(c: RCar) {
+    const { error } = await createClient().from('revenue_cars').update({ sold_from: null }).eq('id', c.id)
+    if (error) return
+    await log('update', 'revenue_car', c.id, { sold_from: null })
+    load()
+  }
+
+  // ── Аккаунты ──
+  function openNewAccount() { setAccForm({ key: null, label: '', from: period, until: '' }) }
+  function openEditAccount(a: Account) { setAccForm({ key: a.key, label: a.label, from: a.active_from, until: a.active_until || '' }) }
+  async function saveAccount() {
+    if (!accForm || !accForm.label.trim()) return
+    const supabase = createClient()
+    const label = accForm.label.trim()
+    if (accForm.key) {
+      const { error } = await supabase.from('revenue_accounts').update({ label, active_from: accForm.from, active_until: accForm.until || null }).eq('key', accForm.key)
+      if (error) return
+      await log('update', 'revenue_account', accForm.key, { label, active_from: accForm.from, active_until: accForm.until || null })
+    } else {
+      // Ключ — первая буква имени; если занята — с номером (A2, A3…)
+      const base = (label.match(/[A-Za-zА-Яа-яЁё0-9]/)?.[0] || 'X').toUpperCase()
+      let key = base, i = 2
+      while (accounts.some(a => a.key === key)) key = `${base}${i++}`
+      const sort = Math.max(0, ...accounts.map(a => a.sort)) + 1
+      const { error } = await supabase.from('revenue_accounts').insert({ key, label, sort, active_from: accForm.from, active_until: accForm.until || null })
+      if (error) return
+      await log('create', 'revenue_account', key, { label, active_from: accForm.from })
+      setView(key)
+    }
+    setAccForm(null)
+    load()
+  }
+
   async function linkCar(c: RCar, carId: string) {
     const supabase = createClient()
     await supabase.from('revenue_cars').update({ car_id: carId || null }).eq('id', c.id)
@@ -907,10 +949,7 @@ export default function IncomePage() {
     <div className="space-y-5 pb-6 min-w-0">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Доходы</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Доход по аккаунтам Turo, клеймы, расходы и чистая прибыль</p>
-        </div>
+        <p className="text-sm text-gray-500">Доход по аккаунтам Turo, клеймы, расходы и чистая прибыль</p>
         <div className="relative">
           <button onClick={() => setExportOpen(o => !o)} className={btnGhost}><Download size={15} /> Выгрузить <ChevronDown size={14} className="text-gray-400" /></button>
           {exportOpen && (
@@ -971,6 +1010,9 @@ export default function IncomePage() {
               {!loading && <span className={`text-xs tabular-nums ${view === x.a.key ? 'text-white/75' : x.t.net < 0 ? 'text-red-500' : 'text-gray-400'}`}>{moneyShort(x.t.net)}</span>}
             </button>
           ))}
+          <button onClick={openNewAccount} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border border-dashed border-gray-300 text-gray-500 hover:text-[#4F46E5] hover:border-indigo-300 transition-colors" title="Добавить аккаунт">
+            <Plus size={14} /> Аккаунт
+          </button>
           <button onClick={() => setView('expenses')} className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-medium border transition-colors ${view === 'expenses' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}>
             <Receipt size={14} /> Расходы
             {!loading && <span className={`text-xs tabular-nums ${view === 'expenses' ? 'text-white/75' : 'text-gray-400'}`}>{moneyShort(sum.expenses)}</span>}
@@ -1252,7 +1294,8 @@ export default function IncomePage() {
               <p className="text-[11px] uppercase tracking-wide text-gray-400">Итог</p>
               <p className={`text-xl font-bold tabular-nums ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</p>
             </div>
-            <button onClick={() => setAddCar(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={16} /> Машина</button>
+            <button onClick={() => openEditAccount(activeAcc.a)} className="btn-secondary inline-flex items-center gap-1.5 px-3 h-9" aria-label="Настроить аккаунт"><Pencil size={15} /><span className="hidden sm:inline">Аккаунт</span></button>
+            <button onClick={() => setAddCar(true)} className="btn-primary inline-flex items-center gap-1.5 px-3 h-9"><Plus size={16} /> Машина</button>
           </div>
           {accCars.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
@@ -1342,13 +1385,13 @@ export default function IncomePage() {
           entry={entryOf(drawerCar.id, period)} history={drawerHistory} lifetime={drawerLifetime}
           fleetOptions={[...(drawerCar.car_id ? fleet.filter(f => f.id === drawerCar.car_id) : []), ...freeFleet]}
           onSave={saveEntry} onClose={() => setDrawer(null)}
-          onLink={id => linkCar(drawerCar, id)} onSold={() => markSold(drawerCar)} />
+          onLink={id => linkCar(drawerCar, id)} onSold={() => markSold(drawerCar)} onUnsold={() => unSold(drawerCar)} />
       )}
 
       {/* Новая машина */}
       {addCar && activeAcc && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setAddCar(false) }}>
-          <div className="bg-white rounded-3xl shadow-xl p-6 w-full max-w-sm space-y-4">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) setAddCar(false) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
             <div>
               <h2 className="text-lg font-semibold">Новая машина</h2>
               <p className="text-sm text-gray-400">{activeAcc.a.label} · с {monthName(period)}</p>
@@ -1369,8 +1412,43 @@ export default function IncomePage() {
               <input id="income-new-name" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Например, Camry 897" className={inputCls} />
             </label>
             <div className="flex gap-3 pt-1">
-              <button onClick={createCar} disabled={!newName.trim()} className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white py-2.5 rounded-xl text-sm font-medium">Добавить</button>
-              <button onClick={() => setAddCar(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-xl text-sm font-medium">Отмена</button>
+              <button onClick={() => setAddCar(false)} className="btn-secondary flex-1 h-11">Отмена</button>
+              <button onClick={createCar} disabled={!newName.trim()} className="btn-primary flex-1 h-11">Добавить</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {accForm && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) setAccForm(null) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{accForm.key ? 'Настройки аккаунта' : 'Новый аккаунт Turo'}</h2>
+              <p className="text-sm text-gray-500">{accForm.key ? 'Имя и месяцы, когда аккаунт работает' : 'Машины добавите после — кнопкой «Машина» в аккаунте'}</p>
+            </div>
+            <label className="block">
+              <span className="block text-sm font-medium text-gray-700 mb-1">Имя аккаунта</span>
+              <input autoFocus value={accForm.label} onChange={e => setAccForm(f => f && ({ ...f, label: e.target.value }))} placeholder="Например, Карам" className={inputCls} />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="block text-sm font-medium text-gray-700 mb-1">Работает с</span>
+                <select value={accForm.from} onChange={e => setAccForm(f => f && ({ ...f, from: e.target.value }))} className={inputCls}>
+                  {Array.from({ length: 25 }, (_, i) => pKey(addMonths(subMonths(new Date(), 12), i))).map(p => <option key={p} value={p}>{monthName(p)}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="block text-sm font-medium text-gray-700 mb-1">Последний месяц</span>
+                <select value={accForm.until} onChange={e => setAccForm(f => f && ({ ...f, until: e.target.value }))} className={inputCls}>
+                  <option value="">Работает</option>
+                  {Array.from({ length: 25 }, (_, i) => pKey(addMonths(subMonths(new Date(), 12), i))).filter(p => p >= accForm.from).map(p => <option key={p} value={p}>{monthName(p)}</option>)}
+                </select>
+              </label>
+            </div>
+            {accForm.key && accForm.until && <p className="text-xs text-gray-500">После {monthName(accForm.until, 'LLLL')} аккаунт исчезнет из вкладок. Данные за прошлые месяцы сохранятся.</p>}
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setAccForm(null)} className="btn-secondary flex-1 h-11">Отмена</button>
+              <button onClick={saveAccount} disabled={!accForm.label.trim()} className="btn-primary flex-1 h-11">{accForm.key ? 'Сохранить' : 'Добавить'}</button>
             </div>
           </div>
         </div>
