@@ -15,6 +15,7 @@ import {
 import { ru } from 'date-fns/locale'
 import { ask, notify } from '@/lib/ui'
 import MonthPicker from '@/components/ui/MonthPicker'
+import DeductionsEditor, { type Deduction } from '@/components/DeductionsEditor'
 import Popover from '@/components/ui/Popover'
 import { canAny, useAccess } from '@/lib/access'
 import { removeCarFrom, restoreCar } from '@/lib/fleet'
@@ -79,10 +80,10 @@ const COLORS = [
   { dot: 'bg-sky-500', soft: 'bg-sky-50 text-sky-700', ring: 'hover:border-sky-200' },
   { dot: 'bg-rose-500', soft: 'bg-rose-50 text-rose-700', ring: 'hover:border-rose-200' },
   { dot: 'bg-violet-500', soft: 'bg-violet-50 text-violet-700', ring: 'hover:border-violet-200' },
-  { dot: 'bg-teal-500', soft: 'bg-teal-50 text-teal-700', ring: 'hover:border-teal-200' },
   { dot: 'bg-orange-500', soft: 'bg-orange-50 text-orange-700', ring: 'hover:border-orange-200' },
   { dot: 'bg-pink-500', soft: 'bg-pink-50 text-pink-700', ring: 'hover:border-pink-200' },
   { dot: 'bg-lime-500', soft: 'bg-lime-50 text-lime-700', ring: 'hover:border-lime-200' },
+  { dot: 'bg-teal-500', soft: 'bg-teal-50 text-teal-700', ring: 'hover:border-teal-200' },
 ]
 
 // ── Выгрузка ──
@@ -323,8 +324,8 @@ function CarDrawer({
   )
 }
 
-// ── Расходы компании (автосохранение) ──
-function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { value: MonthExp; period: string; payroll: number; deductionsTotal: number; onSave: (m: MonthExp) => Promise<boolean> }) {
+// ── Расходы: затраты на сотрудника (со штрафами и вычетами) и расходы компании, автосохранение ──
+function ExpensesPanel({ value, period, payroll, deductions, onDeductionsChanged, onSave }: { value: MonthExp; period: string; payroll: number; deductions: Deduction[]; onDeductionsChanged: () => void; onSave: (m: MonthExp) => Promise<boolean> }) {
   const [s1, setS1] = useState(value.salary1 ? String(value.salary1) : '')
   const [s2, setS2] = useState(value.salary2 ? String(value.salary2) : '')
   const [items, setItems] = useState(value.items.map(i => ({ desc: i.desc, amount: i.amount ? String(i.amount) : '' })))
@@ -358,16 +359,18 @@ function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { va
     descRef.current?.focus()
   }
 
-  const total = expTotal(draft)
   const itemsTotal = draft.items.reduce((s, i) => s + i.amount, 0)
+  const dedTotal = deductions.reduce((s, d) => s + n(d.amount), 0)
+  const staffTotal = draft.salary1 + draft.salary2 - dedTotal
+  const total = itemsTotal + staffTotal
   
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5">
         <div>
-          <p className="text-sm text-gray-500">Расходы компании · {monthName(period)}</p>
+          <p className="text-sm text-gray-500">Расходы за {format(parseISO(period), 'LLLL yyyy', { locale: ru })}</p>
           <p className="text-3xl font-bold tracking-tight text-gray-900 tabular-nums mt-1">{money(total)}</p>
-          <p className="text-xs text-gray-400 mt-1">на сотрудника {money(draft.salary1 + draft.salary2)} · {draft.items.length} поз. на {money(itemsTotal)}</p>
+          <p className="text-xs text-gray-400 mt-1">компания {money(itemsTotal)} · сотрудник {money(staffTotal)} · платежи — во вкладке «Платежи»</p>
         </div>
         <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${status === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>
           {status === 'saving' ? 'Сохраняю…' : status === 'saved' ? <><Check size={14} /> Сохранено</> : 'Изменения сохраняются автоматически'}
@@ -378,7 +381,7 @@ function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { va
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow p-5 space-y-4">
           <div>
             <h3 className="text-base font-bold text-gray-900">Затраты на сотрудника</h3>
-            <p className="text-xs text-gray-400 mt-0.5">Зарплату вносите в конце месяца</p>
+            <p className="text-xs text-gray-400 mt-0.5">Штрафы записывайте по ходу месяца, зарплату — в конце</p>
           </div>
           <label className="block">
             <span className="block text-xs font-medium text-gray-500 mb-1.5">Расходы</span>
@@ -388,17 +391,27 @@ function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { va
             <span className="block text-xs font-medium text-gray-500 mb-1.5">Зарплата</span>
             <MoneyInput id="exp-salary2" value={s2} onChange={setS2} big />
           </label>
-          {payroll > 0 && (
+          {payroll > 0 && draft.salary2 !== payroll && (
             <div className="rounded-2xl bg-indigo-50 p-3 text-sm">
-              <p className="text-indigo-900">По календарю простоев работнику положено <b>{money(payroll)}</b>{deductionsTotal > 0 && <> (с учётом вычетов {money(deductionsTotal)})</>}</p>
-              <button type="button" onClick={() => setS2(String(payroll))} className="mt-1.5 text-xs font-semibold text-indigo-700 hover:underline">Подставить в «Зарплата»</button>
+              <p className="text-indigo-900 dark:text-indigo-200">По простоям за месяц положено <b>{money(payroll)}</b> (до вычетов)</p>
+              <button type="button" onClick={() => setS2(String(payroll))} className="mt-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 hover:underline">Подставить в «Зарплата»</button>
             </div>
           )}
+          <div className="pt-1">
+            <span className="block text-xs font-medium text-gray-500 mb-2">Штрафы и вычеты</span>
+            <DeductionsEditor month={period.slice(0, 7)} items={deductions} onChanged={onDeductionsChanged} compact />
+          </div>
+          <div className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm space-y-1">
+            <div className="flex justify-between text-gray-500"><span>Расходы + зарплата</span><span className="tabular-nums">{money(draft.salary1 + draft.salary2)}</span></div>
+            {dedTotal > 0 && <div className="flex justify-between text-rose-500"><span>Штрафы и вычеты</span><span className="tabular-nums">−{money(dedTotal)}</span></div>}
+            <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-200"><span>Итого на сотрудника</span><span className="tabular-nums">{money(staffTotal)}</span></div>
+          </div>
         </div>
 
         <div className="lg:col-span-2 bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
           <div className="px-5 pt-5 pb-3">
-            <h3 className="text-base font-bold text-gray-900">Покупки и прочие расходы</h3>
+            <h3 className="text-base font-bold text-gray-900">Расходы компании</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Покупки и прочие расходы, не связанные с сотрудником</p>
           </div>
           <form onSubmit={e => { e.preventDefault(); addItem() }} className="grid grid-cols-[1fr_120px_auto] gap-2 px-5 pb-4">
             <input ref={descRef} id="exp-new-desc" value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Что купили / за что заплатили" className={inputCls} />
@@ -424,7 +437,7 @@ function ExpensesPanel({ value, period, payroll, deductionsTotal, onSave }: { va
             </ul>
           )}
           <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/70 px-5 py-3 text-sm">
-            <span className="text-gray-500">Итого по списку</span>
+            <span className="text-gray-500">Итого расходы компании</span>
             <span className="font-bold tabular-nums text-gray-900">{money(itemsTotal)}</span>
           </div>
         </div>
@@ -579,7 +592,7 @@ export default function IncomePage() {
   const [exportOpen, setExportOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [addCar, setAddCar] = useState(false)
-  const [deductions, setDeductions] = useState<{ date: string; amount: number }[]>([])
+  const [deductions, setDeductions] = useState<Deduction[]>([])
   // Аккаунт: новый или редактирование (key задан)
   const [accForm, setAccForm] = useState<{ key: string | null; label: string; from: string; until: string } | null>(null)
   const [newCarId, setNewCarId] = useState('')
@@ -597,7 +610,7 @@ export default function IncomePage() {
       supabase.from('revenue_payments').select('*').order('sort'),
       supabase.from('cars').select('*'),
       supabase.from('car_blocks').select('car_id, start_date, end_date'),
-      supabase.from('salary_deductions').select('date, amount'),
+      supabase.from('salary_deductions').select('id, date, reason, amount').order('date').order('created_at'),
     ])
     let res = await fetchAll()
     for (let i = 0; i < 2 && res.some(r => r.error); i++) {
@@ -605,7 +618,7 @@ export default function IncomePage() {
       res = await fetchAll()
     }
     const [a, c, e, m, pay, f, b, d] = res
-    setDeductions((d.data as { date: string; amount: number }[]) || [])
+    setDeductions(((d.data as Deduction[]) || []).map(x => ({ ...x, amount: n(x.amount) })))
     setAccounts((a.data as Account[]) || [])
     // Название машины — из «Авто» (марка и модель), номер показывается отдельно; своё название только у непривязанных
     setRcars(((c.data as RCar[]) || []).map(r => r.car ? { ...r, name: `${r.car.make} ${r.car.model}` } : r))
@@ -659,10 +672,14 @@ export default function IncomePage() {
     const total = accs.reduce((t, x) => add(t, x.t), zero())
     const exp = monthExp.find(m => m.period === p) || null
     const pays = payments.filter(x => x.period === p).reduce((s, x) => s + n(x.amount), 0)
-    const expenses = expTotal(exp)
-    const has = entries.some(e => e.period === p) || expenses > 0 || pays > 0
-    return { accs, total, exp, expenses, pays, profit: total.net - expenses - pays, has }
-  }, [accountsIn, accTotals, carsIn, monthExp, entries, payments])
+    // Три статьи: расходы компании (покупки), затраты на сотрудника (расходы + зарплата − штрафы/вычеты), платежи
+    const ded = deductions.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + n(x.amount), 0)
+    const company = (exp?.items || []).reduce((s, i) => s + n(i.amount), 0)
+    const staff = n(exp?.salary1) + n(exp?.salary2) - ded
+    const expenses = company + staff
+    const has = entries.some(e => e.period === p) || expTotal(exp) > 0 || pays > 0 || ded > 0
+    return { accs, total, exp, company, staff, ded, expenses, pays, profit: total.net - expenses - pays, has }
+  }, [accountsIn, accTotals, carsIn, monthExp, entries, payments, deductions])
 
   // Месяцы для ленты: от первого месяца с данными до текущего
   const months = useMemo(() => {
@@ -677,7 +694,6 @@ export default function IncomePage() {
 
 
   const sum = monthSummary(period)
-  const monthDeductions = deductions.filter(x => x.date.startsWith(period.slice(0, 7))).reduce((t, x) => t + n(x.amount), 0)
   const prevSum = monthSummary(pKey(subMonths(month, 1)))
   const delta = prevSum.has ? sum.profit - prevSum.profit : null
 
@@ -858,7 +874,8 @@ export default function IncomePage() {
     `Клеймы (после вычета): ${money(sum.total.claim + sum.total.supp - sum.total.ded)}`,
     `Ремонт и прочее: −${abs(sum.total.repair + sum.total.other)}`,
     `Итого по аккаунтам: ${money(sum.total.net)}`,
-    `Расходы компании: −${abs(sum.expenses)}`,
+    `Расходы компании: −${abs(sum.company)}`,
+    `Затраты на сотрудника: −${abs(sum.staff)}${sum.ded ? ` (в т.ч. вычеты −${abs(sum.ded)})` : ''}`,
     `Платежи: −${abs(sum.pays)}`,
     '',
     `${sum.profit >= 0 ? '✅' : '🔻'} Чистая прибыль: ${money(sum.profit)}`,
@@ -886,24 +903,27 @@ export default function IncomePage() {
   }
   const carHeader: Cell[] = ['Месяц', 'Аккаунт', 'Машина', 'Номер', 'Gross', 'Claim', 'Supplement', 'Вычет', 'Ремонт', 'Прочее', 'Прочее (что)', 'Итог']
   function exportMonth() {
-    const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Расходы компании'], ['Сотрудник: расходы', n(sum.exp?.salary1)], ['Сотрудник: зарплата', n(sum.exp?.salary2)]]
+    const rows: Cell[][] = [carHeader, ...carRows(period), [], ['Затраты на сотрудника'], ['Расходы', n(sum.exp?.salary1)], ['Зарплата', n(sum.exp?.salary2)]]
+    for (const d of deductions.filter(x => x.date.startsWith(period.slice(0, 7)))) rows.push([`Вычет: ${d.reason} (${d.date})`, -n(d.amount)])
+    rows.push(['Итого на сотрудника', round2(sum.staff)], [], ['Расходы компании'])
     for (const i of sum.exp?.items || []) rows.push([i.desc, n(i.amount)])
     rows.push([], ['Платежи'])
     for (const x of payments.filter(x => x.period === period)) rows.push([`${x.grp}: ${x.name}`, n(x.amount), x.day ? `${x.day} число` : '', x.paid ? 'оплачен' : 'не оплачен'])
-    rows.push([], ['Итого по аккаунтам', round2(sum.total.net)], ['Расходы компании', round2(sum.expenses)], ['Платежи', round2(sum.pays)], ['Чистая прибыль', round2(sum.profit)])
+    rows.push([], ['Итого по аккаунтам', round2(sum.total.net)], ['Расходы компании', round2(sum.company)], ['Затраты на сотрудника', round2(sum.staff)], ['Платежи', round2(sum.pays)], ['Чистая прибыль', round2(sum.profit)])
     downloadFile(toCsv(rows), `dohody-${format(month, 'yyyy-MM')}.csv`, 'text/csv;charset=utf-8')
     setExportOpen(false)
   }
   function exportAll() {
     const ms = monthStats.filter(s => s.has)
-    const rows: Cell[][] = [['Сводка по месяцам'], ['Месяц', 'Gross', 'Итого по аккаунтам', 'Расходы компании', 'Платежи', 'Чистая прибыль'],
-      ...ms.map(s => [monthName(s.p), round2(s.total.gross), round2(s.total.net), round2(s.expenses), round2(s.pays), round2(s.profit)] as Cell[]),
+    const rows: Cell[][] = [['Сводка по месяцам'], ['Месяц', 'Gross', 'Итого по аккаунтам', 'Расходы компании', 'Затраты на сотрудника', 'Платежи', 'Чистая прибыль'],
+      ...ms.map(s => [monthName(s.p), round2(s.total.gross), round2(s.total.net), round2(s.company), round2(s.staff), round2(s.pays), round2(s.profit)] as Cell[]),
       [], ['Машины по месяцам'], carHeader]
     ms.forEach(s => rows.push(...carRows(s.p)))
     rows.push([], ['Расходы компании по месяцам'], ['Месяц', 'Статья', 'Сумма'])
     ms.forEach(s => {
       if (n(s.exp?.salary1)) rows.push([monthName(s.p), 'Сотрудник: расходы', n(s.exp?.salary1)])
       if (n(s.exp?.salary2)) rows.push([monthName(s.p), 'Сотрудник: зарплата', n(s.exp?.salary2)])
+      for (const d of deductions.filter(x => x.date.startsWith(s.p.slice(0, 7)))) rows.push([monthName(s.p), `Сотрудник: вычет — ${d.reason}`, -n(d.amount)])
       for (const i of s.exp?.items || []) rows.push([monthName(s.p), i.desc, n(i.amount)])
       for (const x of payments.filter(x => x.period === s.p)) rows.push([monthName(s.p), `Платёж · ${x.grp}: ${x.name}`, n(x.amount)])
     })
@@ -1059,12 +1079,13 @@ export default function IncomePage() {
                   )}
                 </div>
               </div>
-              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-5 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
+              <div className="order-3 sm:order-none w-full sm:w-auto sm:flex-1 grid grid-cols-3 sm:grid-cols-6 gap-x-4 gap-y-2 border-t border-gray-100 pt-3 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-6">
                 {[
                   { label: 'Gross', value: money(sum.total.gross), cls: 'text-gray-900' },
                   { label: 'Клеймы (чистыми)', value: money(sum.total.claim + sum.total.supp - sum.total.ded - sum.total.repair), cls: 'text-gray-900' },
                   { label: 'Прочее', value: sum.total.other ? `−${abs(sum.total.other)}` : '—', cls: 'text-gray-500' },
-                  { label: 'Расходы', value: `−${abs(sum.expenses)}`, cls: 'text-gray-500', go: 'expenses' },
+                  { label: 'Компания', value: `−${abs(sum.company)}`, cls: 'text-gray-500', go: 'expenses' },
+                  { label: 'Сотрудник', value: `−${abs(sum.staff)}`, cls: 'text-gray-500', go: 'expenses' },
                   { label: 'Платежи', value: `−${abs(sum.pays)}`, cls: 'text-gray-500', go: 'payments' },
                 ].map(st => (
                   <button key={st.label} onClick={() => st.go && setView(st.go)} disabled={!st.go} className={`text-left ${st.go ? 'hover:opacity-70' : 'cursor-default'}`}>
@@ -1135,8 +1156,14 @@ export default function IncomePage() {
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Расходы компании</td>
-                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">сотрудник {money(n(sum.exp?.salary1) + n(sum.exp?.salary2))} · {(sum.exp?.items || []).length} поз.</td>
-                    <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.expenses)}</td>
+                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">{(sum.exp?.items || []).length} поз. · покупки и прочее</td>
+                    <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.company)}</td>
+                    <td className="border-b border-gray-200" />
+                  </tr>
+                  <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
+                    <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Затраты на сотрудника</td>
+                    <td colSpan={3} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">расходы {money(n(sum.exp?.salary1))} · зарплата {money(n(sum.exp?.salary2))}{sum.ded ? ` · вычеты −${abs(sum.ded)}` : ''}</td>
+                    <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.staff)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('payments')}>
@@ -1240,7 +1267,7 @@ export default function IncomePage() {
           prevCount={payments.filter(x => x.period === pKey(subMonths(month, 1))).length} prevLabel={monthName(pKey(subMonths(month, 1)), 'LLLL').toLowerCase()}
           onAdd={addPayment} onUpdate={updatePayment} onDelete={deletePayment} onCopyPrev={copyPrevPayments} />
       ) : view === 'expenses' ? (
-        <ExpensesPanel key={period} period={period} payroll={Math.max(0, payroll - monthDeductions)} deductionsTotal={monthDeductions} onSave={saveExpenses}
+        <ExpensesPanel key={period} period={period} payroll={payroll} deductions={deductions.filter(x => x.date.startsWith(period.slice(0, 7)))} onDeductionsChanged={load} onSave={saveExpenses}
           value={sum.exp || { period, salary1: 0, salary2: 0, items: [] }} />
       ) : view === 'gross' ? (
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">

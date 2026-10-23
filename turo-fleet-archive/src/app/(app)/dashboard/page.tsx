@@ -194,14 +194,16 @@ export default function DashboardPage() {
       const role = (prof?.role ?? 'admin') as string
       if (role !== 'admin' && !((prof?.permissions as string[] | null) ?? []).includes('/income')) return
 
-      const [entRes, expRes, payRes] = await Promise.all([
+      const [entRes, expRes, payRes, dedRes2] = await Promise.all([
         supabase.from('revenue_entries').select('period, gross, repair, claim_items, other_items'),
         supabase.from('revenue_month_expenses').select('period, salary1, salary2, items'),
         supabase.from('revenue_payments').select('period, amount'),
+        supabase.from('salary_deductions').select('date, amount'),
       ])
       const entries = (entRes.data || []) as RevEntry[]
       const exps = (expRes.data || []) as RevExp[]
       const pays = (payRes.data || []) as { period: string; amount: number }[]
+      const deds = (dedRes2.data || []) as { date: string; amount: number }[]
 
       const period = format(new Date(), 'yyyy-MM-01')
 
@@ -210,7 +212,9 @@ export default function DashboardPage() {
         const m = exps.find(x => x.period === p)
         const exp = num(m?.salary1) + num(m?.salary2) + (m?.items || []).reduce((s, i) => s + num(i.amount), 0)
         const pay = pays.filter(x => x.period === p).reduce((s, x) => s + num(x.amount), 0)
-        return { value: net - exp - pay, has: entries.some(e => e.period === p) || exp > 0 || pay > 0 }
+        // Штрафы/вычеты уменьшают затраты на сотрудника
+        const ded = deds.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + num(x.amount), 0)
+        return { value: net - exp + ded - pay, has: entries.some(e => e.period === p) || exp > 0 || pay > 0 || ded > 0 }
       }
       const cur = monthProfit(period)
       const prev = monthProfit(format(subMonths(parseISO(period), 1), 'yyyy-MM-01'))
@@ -258,7 +262,7 @@ export default function DashboardPage() {
     {
       label: 'Зарплата',
       value: `$${(salary.total - salary.ded).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-      sub: salary.ded ? `$${salary.total} − вычеты $${salary.ded.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
+      sub: salary.ded ? `$${salary.total.toLocaleString('en-US')} − вычеты $${salary.ded.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
       href: '/cars?tab=downtime',
       icon: Users,
       tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',

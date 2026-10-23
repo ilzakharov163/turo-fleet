@@ -157,6 +157,11 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) {
 .btn-danger:hover { background: #DC2626; }
 .btn-primary:disabled, .btn-secondary:disabled, .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
+/* Выезжающая панель (Popover): на компьютере — под кнопкой, координаты в переменных */
+@media (min-width: 640px) {
+  .popover-panel { top: var(--pt); left: var(--pl); right: var(--pr); bottom: auto; max-height: calc(100vh - var(--pt) - 16px); overflow-y: auto; }
+}
+
 /* Скелетон при загрузке */
 .skeleton {
   background: linear-gradient(90deg, var(--color-gray-100) 25%, var(--color-gray-50) 50%, var(--color-gray-100) 75%);

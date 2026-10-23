@@ -13,6 +13,7 @@ import {
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { inputCls } from '@/components/ui/PageShell'
+import DeductionsEditor from '@/components/DeductionsEditor'
 import { notify, ask } from '@/lib/ui'
 import { calcSalary, inFleet } from '@/lib/calc'
 
@@ -33,7 +34,6 @@ export default function DowntimeView() {
   const [copied, setCopied] = useState(false)
   // Вычеты из зарплаты (записываются по ходу месяца)
   const [deductions, setDeductions] = useState<{ id: string; date: string; reason: string; amount: number }[]>([])
-  const [ded, setDed] = useState({ date: format(new Date(), 'yyyy-MM-dd'), reason: '', amount: '' })
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -113,25 +113,6 @@ export default function DowntimeView() {
   const dedTotal = monthDeds.reduce((s, d) => s + Number(d.amount), 0)
   const toPay = totalSalary - dedTotal
   const usd2 = (v: number) => `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`
-
-  async function addDeduction(e: React.FormEvent) {
-    e.preventDefault()
-    const amount = parseFloat(ded.amount.replace(',', '.'))
-    if (!ded.reason.trim() || !(amount > 0)) return
-    const { data, error } = await createClient().from('salary_deductions').insert({ date: ded.date, reason: ded.reason.trim(), amount }).select('id').single()
-    if (error) return
-    await log('create', 'salary_deduction', data?.id || '', { date: ded.date, reason: ded.reason.trim(), amount })
-    notify('Вычет записан', 'success')
-    setDed(d => ({ ...d, reason: '', amount: '' }))
-    load()
-  }
-  async function deleteDeduction(d: { id: string; date: string; reason: string; amount: number }) {
-    if (!await ask('Удалить вычет?', { detail: `${d.reason} · ${usd2(d.amount)}`, ok: 'Удалить', danger: true })) return
-    const { error } = await createClient().from('salary_deductions').delete().eq('id', d.id)
-    if (error) return
-    await log('delete', 'salary_deduction', d.id, { reason: d.reason, amount: d.amount })
-    load()
-  }
 
   function payrollText() {
     const monthLabel = format(currentMonth, 'LLLL yyyy', { locale: ru })
@@ -403,41 +384,16 @@ export default function DowntimeView() {
         {/* Вычеты — записываются по ходу месяца, вычитаются из итога */}
         <div className="mt-6 pt-5 border-t border-gray-100">
           <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h3 className="text-sm font-semibold text-gray-900">Вычеты за {format(currentMonth, 'LLLL', { locale: ru })}</h3>
-            {dedTotal > 0 && <span className="text-sm font-semibold text-rose-500 tabular-nums">−{usd2(dedTotal)}</span>}
+            <h3 className="text-sm font-semibold text-gray-900">Штрафы и вычеты за {format(currentMonth, 'LLLL', { locale: ru })}</h3>
+            <span className="hidden sm:inline text-xs text-gray-400">то же, что в «Доходы → Расходы»</span>
           </div>
-          {monthDeds.length > 0 ? (
-            <ul className="divide-y divide-gray-100 mb-4">
-              {monthDeds.map((d, i) => (
-                <li key={d.id} className="flex items-center gap-3 py-2.5 text-sm">
-                  <span className="w-6 text-xs text-gray-400 tabular-nums">{i + 1}.</span>
-                  <span className="w-16 flex-shrink-0 text-xs text-gray-500 tabular-nums">{format(parseISO(d.date), 'd MMM', { locale: ru })}</span>
-                  <span className="flex-1 min-w-0 text-gray-800 break-words">{d.reason}</span>
-                  <span className="font-semibold text-rose-500 tabular-nums">−{usd2(d.amount)}</span>
-                  <button onClick={() => deleteDeduction(d)} className="w-8 h-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center" aria-label="Удалить вычет"><X size={15} /></button>
-                </li>
-              ))}
-              <li className="flex items-center justify-between py-2.5 text-sm font-semibold">
-                <span className="text-gray-700">К выплате</span>
-                <span className="text-gray-900 tabular-nums">{usd2(toPay)}</span>
-              </li>
-            </ul>
-          ) : <p className="text-sm text-gray-400 mb-4">Вычетов в этом месяце нет</p>}
-          <form onSubmit={addDeduction} className="grid grid-cols-2 sm:grid-cols-[150px_1fr_120px_auto] gap-2 items-end">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Дата</label>
-              <DatePicker value={ded.date} onChange={v => setDed(f => ({ ...f, date: v }))} />
+          <DeductionsEditor month={monthKey} items={monthDeds} onChanged={load} />
+          {dedTotal > 0 && (
+            <div className="mt-3 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2.5 text-sm font-semibold">
+              <span className="text-gray-700">К выплате</span>
+              <span className="text-gray-900 tabular-nums">{usd2(toPay)}</span>
             </div>
-            <div className="col-span-2 sm:col-span-1 order-first sm:order-none">
-              <label className="block text-xs text-gray-500 mb-1">За что</label>
-              <input value={ded.reason} onChange={e => setDed(f => ({ ...f, reason: e.target.value }))} placeholder="Например, не помыл машину" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Сумма, $</label>
-              <input value={ded.amount} onChange={e => setDed(f => ({ ...f, amount: e.target.value }))} inputMode="decimal" placeholder="0" className={inputCls} />
-            </div>
-            <button type="submit" disabled={!ded.reason.trim() || !ded.amount} className="btn-primary h-11 px-4 col-span-2 sm:col-span-1 inline-flex items-center justify-center gap-1.5"><Plus size={15} /> Вычет</button>
-          </form>
+          )}
         </div>
 
       </div>

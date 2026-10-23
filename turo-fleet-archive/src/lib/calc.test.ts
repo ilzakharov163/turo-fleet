@@ -36,6 +36,8 @@ test('прибыль месяца = итоги − расходы компани
   assert.equal(monthExpensesTotal(exp), 1600)
   assert.equal(monthProfit(entries, exp, [{ amount: 250 }]), 3000 - 400 - 1600 - 250)
   assert.equal(monthProfit([], null, []), 0)
+  // штрафы/вычеты уменьшают затраты на сотрудника → прибыль больше
+  assert.equal(monthProfit(entries, exp, [{ amount: 250 }], 40), 3000 - 400 - (1600 - 40) - 250)
 })
 
 test('машина в парке: снятая с листинга и убранная с месяца не считаются', () => {

@@ -248,11 +248,13 @@ export default function ReportsView() {
     return { a, cars: cars.length, ...t, active }
   }).filter(x => x.active && (x.cars > 0 || x.net !== 0))
   const revExp = rev.exp.find(x => x.period === revP)
-  const revExpTotal = num(revExp?.salary1) + num(revExp?.salary2) + (revExp?.items || []).reduce((s, i) => s + num(i.amount), 0)
   const revGross = revRows.reduce((s, x) => s + x.gross, 0)
   const revTotal = revRows.reduce((s, x) => s + x.net, 0)
   const revPays = rev.pays.filter(x => x.period === revP).reduce((s, x) => s + num(x.amount), 0)
-  const revProfit = revTotal - revExpTotal - revPays
+  const revDed = deductions.filter(d => d.date.startsWith(revP.slice(0, 7))).reduce((s, d) => s + Number(d.amount), 0)
+  const revStaff = num(revExp?.salary1) + num(revExp?.salary2) - revDed
+  const revCompany = (revExp?.items || []).reduce((s, i) => s + num(i.amount), 0)
+  const revProfit = revTotal - revCompany - revStaff - revPays
   const incomeText = [
     `💰 Доходы за ${monthLabel}`,
     '',
@@ -260,7 +262,8 @@ export default function ReportsView() {
     '',
     `Gross: ${usd(revGross)}`,
     `Итого по аккаунтам: ${usd(revTotal)}`,
-    `Расходы компании: −${usd(Math.abs(revExpTotal))}`,
+    `Расходы компании: −${usd(Math.abs(revCompany))}`,
+    `Затраты на сотрудника: −${usd(Math.abs(revStaff))}${revDed ? ` (в т.ч. вычеты −${usd(revDed)})` : ''}`,
     `Платежи: −${usd(Math.abs(revPays))}`,
     '',
     `${revProfit >= 0 ? '✅' : '🔻'} Чистая прибыль: ${usd(revProfit)}`,
@@ -270,7 +273,8 @@ export default function ReportsView() {
     ...revRows.map(x => [x.a.label, x.cars, Math.round(x.gross * 100) / 100, Math.round(x.net * 100) / 100] as Cell[]),
     [],
     ['Итого по аккаунтам', '', Math.round(revGross * 100) / 100, Math.round(revTotal * 100) / 100],
-    ['Расходы компании', '', '', Math.round(revExpTotal * 100) / 100],
+    ['Расходы компании', '', '', Math.round(revCompany * 100) / 100],
+    ['Затраты на сотрудника', '', '', Math.round(revStaff * 100) / 100],
     ['Платежи', '', '', Math.round(revPays * 100) / 100],
     ['Чистая прибыль', '', '', Math.round(revProfit * 100) / 100],
   ]

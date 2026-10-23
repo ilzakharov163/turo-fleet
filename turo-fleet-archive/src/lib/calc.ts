@@ -50,7 +50,8 @@ export interface MonthExpenses { salary1: number; salary2: number; items: OtherI
 export const monthExpensesTotal = (m?: MonthExpenses | null) =>
   num(m?.salary1) + num(m?.salary2) + (m?.items || []).reduce((s, i) => s + num(i.amount), 0)
 
-// чистая прибыль месяца = Σ итогов машин − расходы компании − Σ платежей
-export function monthProfit(entries: RevenueEntry[], expenses: MonthExpenses | null | undefined, payments: { amount: number }[]) {
-  return entries.reduce((s, e) => s + calcEntry(e).net, 0) - monthExpensesTotal(expenses) - payments.reduce((s, p) => s + num(p.amount), 0)
+// чистая прибыль месяца = Σ итогов машин − расходы компании − затраты на сотрудника − Σ платежей,
+// где затраты на сотрудника = расходы + зарплата − штрафы/вычеты месяца (deductions)
+export function monthProfit(entries: RevenueEntry[], expenses: MonthExpenses | null | undefined, payments: { amount: number }[], deductions = 0) {
+  return entries.reduce((s, e) => s + calcEntry(e).net, 0) - monthExpensesTotal(expenses) + deductions - payments.reduce((s, p) => s + num(p.amount), 0)
 }
