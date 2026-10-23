@@ -8,6 +8,7 @@ export interface Car {
   active_days_override?: number | null
   owner_group: 'main' | 'ilya'
   delisted: boolean
+  removed_from?: string | null  // с этого месяца машины нет (продана/разбита)
   created_at: string
   updated_at: string
 }

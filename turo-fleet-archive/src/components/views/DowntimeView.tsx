@@ -14,7 +14,7 @@ import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { inputCls } from '@/components/ui/PageShell'
 import { notify, ask } from '@/lib/ui'
-import { calcSalary } from '@/lib/calc'
+import { calcSalary, inFleet } from '@/lib/calc'
 
 interface PayrollRow {
   car: Car
@@ -56,7 +56,7 @@ export default function DowntimeView() {
   }
 
   // Расчёт простоя для каждого авто
-  const activeCars = cars.filter(c => !c.delisted).sort((a, b) => `${a.make} ${a.model} ${a.plate}`.localeCompare(`${b.make} ${b.model} ${b.plate}`))
+  const activeCars = cars.filter(c => inFleet(c, format(startOfMonth(currentMonth), 'yyyy-MM-dd'))).sort((a, b) => `${a.make} ${a.model} ${a.plate}`.localeCompare(`${b.make} ${b.model} ${b.plate}`))
   const payrollRows: PayrollRow[] = activeCars.map(car => {
     const monthBlocks = blocks.filter(b => b.car_id === car.id).filter(b => {
       const s = parseISO(b.start_date)

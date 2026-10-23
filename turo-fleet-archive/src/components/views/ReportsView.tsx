@@ -7,7 +7,7 @@ import { Send, Copy, Check, Download, ChevronLeft, ChevronRight, Car as CarIcon,
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, isSameMonth, addMonths, subMonths, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { notify } from '@/lib/ui'
-import { calcSalary, calcEntry } from '@/lib/calc'
+import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
 
 // ── Типы ──
 interface Block {
@@ -129,8 +129,10 @@ export default function ReportsView() {
   const today = startOfDay(now)
   const todayLabel = format(now, 'd MMMM yyyy', { locale: ru })
   const monthLabel = format(month, 'LLLL yyyy', { locale: ru })
-  const listed = cars.filter(c => !c.delisted).sort(byName)
-  const delistedCount = cars.length - listed.length
+  // Сегодня в парке (для «Автопарк сегодня») и в парке в выбранном месяце (для зарплаты)
+  const listed = cars.filter(c => inFleet(c, format(startOfMonth(now), 'yyyy-MM-dd'))).sort(byName)
+  const listedInMonth = cars.filter(c => inFleet(c, format(startOfMonth(month), 'yyyy-MM-dd'))).sort(byName)
+  const delistedCount = cars.filter(c => c.delisted).length
 
   // ── 1. Автопарк сегодня ──
   const fleetRows = listed.map(car => {
@@ -199,7 +201,7 @@ export default function ReportsView() {
 
   // ── 3. Зарплата работника ──
   const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
-  const payroll = listed.map(car => {
+  const payroll = listedInMonth.map(car => {
     const carBlocks = blocks.filter(b => b.car_id === car.id)
     const inactive = days.filter(day => carBlocks.some(b => isWithinInterval(day, { start: parseISO(b.start_date), end: blockEnd(b) }))).length
     return { car, inactive, salary: calcSalary(inactive, days.length) }

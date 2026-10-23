@@ -9,6 +9,7 @@ import { format, parseISO, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { notify, ask } from '@/lib/ui'
+import { inFleet } from '@/lib/calc'
 
 // Наклейки меняем раз в полтора месяца
 const INTERVAL_DAYS = 45
@@ -134,7 +135,7 @@ export default function StickersView() {
   const ok = rows.filter(r => r.level === 'ok').length
 
   const addedIds = new Set(entries.map(e => e.car_id))
-  const available = cars.filter(c => !c.delisted && !addedIds.has(c.id))
+  const available = cars.filter(c => inFleet(c, format(new Date(), 'yyyy-MM-01')) && !addedIds.has(c.id))
 
   function carName(c?: Car) {
     return c ? `${c.make} ${c.model} ${c.plate}` : '— авто удалено —'

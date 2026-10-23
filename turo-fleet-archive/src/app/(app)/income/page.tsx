@@ -13,8 +13,10 @@ import {
   format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addMonths, subMonths,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ask } from '@/lib/ui'
-import { calcSalary, calcEntry } from '@/lib/calc'
+import { ask, notify } from '@/lib/ui'
+import { canAny, useAccess } from '@/lib/access'
+import { removeCarFrom, restoreCar } from '@/lib/fleet'
+import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
 
 // ── Типы ──
 type ClaimItem = { claim: number; supplement: number; pct: number }
@@ -294,11 +296,11 @@ function CarDrawer({
             </label>
             {rcar.sold_from ? (
               <div className="flex items-center justify-between gap-2 rounded-xl bg-orange-50 px-3 py-2 text-xs text-orange-600">
-                <span>Убрана из списка с {monthName(rcar.sold_from)}</span>
+                <span>Убрана с {format(parseISO(rcar.sold_from), 'MMMM yyyy', { locale: ru })}</span>
                 <button onClick={onUnsold} className="inline-flex items-center gap-1 font-semibold"><RotateCcw size={13} /> Вернуть</button>
               </div>
             ) : (
-              <button onClick={onSold} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 h-10 text-sm text-gray-600 hover:text-red-600 hover:border-red-200"><Archive size={15} /> Продана или разбита — убрать с {monthName(pKey(addMonths(parseISO(period), 1)), 'LLLL').toLowerCase()}</button>
+              <button onClick={onSold} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 h-10 text-sm text-gray-600 hover:text-red-600 hover:border-red-200"><Archive size={15} /> Продана или разбита — убрать с {format(addMonths(parseISO(period), 1), 'MMMM', { locale: ru })}</button>
             )}
           </div>
         </div>
@@ -551,6 +553,7 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
 
 // ── Страница ──
 export default function IncomePage() {
+  const access = useAccess()
   const [loading, setLoading] = useState(true)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [rcars, setRcars] = useState<RCar[]>([])
@@ -675,12 +678,12 @@ export default function IncomePage() {
   // Зарплата работника по календарю (та же формула, что в календаре)
   const payroll = useMemo(() => {
     const days = eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })
-    return fleet.filter(c => !c.delisted).reduce((s, car) => {
+    return fleet.filter(c => inFleet(c, period)).reduce((s, car) => {
       const cb = blocks.filter(b => b.car_id === car.id)
       const inactive = days.filter(d => cb.some(b => isWithinInterval(d, { start: parseISO(b.start_date), end: blockEnd(b) }))).length
       return s + calcSalary(inactive, days.length)
     }, 0)
-  }, [fleet, blocks, month])
+  }, [fleet, blocks, month, period])
 
   useEffect(() => {
     if (loading) return
@@ -786,18 +789,22 @@ export default function IncomePage() {
   }
   async function markSold(c: RCar) {
     const next = pKey(addMonths(month, 1))
-    if (!await ask(`${c.name}: убрать из списка начиная с ${monthName(next)}?`, { detail: `В ${monthName(period, 'LLLL')} машина останется — можно внести Gross. Данные прошлых месяцев сохранятся, вернуть можно в этой же панели.`, ok: 'Убрать' })) return
-    const supabase = createClient()
-    const { error } = await supabase.from('revenue_cars').update({ sold_from: next }).eq('id', c.id)
-    if (error) { return }
-    await log('update', 'revenue_car', c.id, { sold_from: next })
+    const fleetCar = c.car_id ? fleet.find(f => f.id === c.car_id) : null
+    const fromW = format(parseISO(next), 'MMMM', { locale: ru })
+    if (!await ask(`${c.name}: убрать с ${fromW}?`, {
+      detail: `За ${format(month, 'LLLL', { locale: ru })} машина посчитается как обычно — можно внести Gross.${fleetCar ? ` С ${fromW} её не будет в «Доходах», в «Авто» и в зарплате работника.` : ' Машина не привязана к парку — уберётся только из «Доходов».'} Данные прошлых месяцев сохранятся, вернуть можно в этой же панели.`,
+      ok: 'Убрать',
+    })) return
+    const ok = await removeCarFrom({ carId: c.car_id, revenueCarId: c.id, from: next, canFleet: canAny(access, ['/cars']), canIncome: true })
+    if (!ok) return
+    notify(`${c.name} убрана с ${fromW}`, 'success')
     setDrawer(null)
     load()
   }
   async function unSold(c: RCar) {
-    const { error } = await createClient().from('revenue_cars').update({ sold_from: null }).eq('id', c.id)
-    if (error) return
-    await log('update', 'revenue_car', c.id, { sold_from: null })
+    const ok = await restoreCar({ carId: c.car_id, revenueCarId: c.id, from: c.sold_from, canFleet: canAny(access, ['/cars']), canIncome: true })
+    if (!ok) return
+    notify(`${c.name} возвращена`, 'success')
     load()
   }
 

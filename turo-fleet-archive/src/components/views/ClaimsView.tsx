@@ -9,6 +9,7 @@ import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } fro
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { ask } from '@/lib/ui'
+import { inFleet } from '@/lib/calc'
 
 interface Claim {
   id: string
@@ -301,7 +302,7 @@ export default function ClaimsView() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
                 <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">Выберите авто</option>
-                  {cars.filter(c => !c.delisted).map(c => (<option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>))}
+                  {cars.filter(c => inFleet(c, format(new Date(), 'yyyy-MM-01'))).map(c => (<option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>))}
                 </select>
               </div>
               <div>

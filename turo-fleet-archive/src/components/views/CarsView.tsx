@@ -4,10 +4,14 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car, CarBlock } from '@/types'
-import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye, RotateCcw } from 'lucide-react'
 import { Card, Modal, FormField, inputCls, ModalActions, SaveButton, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
 import CarCard from '@/components/CarCard'
+import { restoreCar } from '@/lib/fleet'
+import { canAny, useAccess } from '@/lib/access'
+import { ask, notify } from '@/lib/ui'
+import { ru } from 'date-fns/locale'
 import { format, parseISO } from 'date-fns'
 
 function fmtDate(d: string) {
@@ -33,6 +37,7 @@ export default function CarsView() {
   const rowRefs = useRef<Record<string, HTMLElement | null>>({})
   const [carBlocks, setCarBlocks] = useState<CarBlock[]>([])
   const [openCar, setOpenCar] = useState<Car | null>(null)
+  const access = useAccess()
 
   async function load() {
     const supabase = createClient()
@@ -138,6 +143,12 @@ export default function CarsView() {
     setInactiveModal(null); setInactiveReason(''); setInactiveDate(''); setInactiveEndDate(''); load()
   }
 
+  async function handleRestore(car: Car) {
+    if (!await ask(`Вернуть ${car.make} ${car.model} ${car.plate} в парк?`, { detail: 'Машина снова появится в списках, зарплате и в «Доходах».', ok: 'Вернуть' })) return
+    const ok = await restoreCar({ carId: car.id, from: car.removed_from || null, canFleet: true, canIncome: canAny(access, ['/income']) })
+    if (ok) { notify('Машина возвращена', 'success'); load() }
+  }
+
   async function handleToggleDelisted(car: Car) {
     const supabase = createClient()
     const newDelisted = !car.delisted
@@ -164,8 +175,13 @@ export default function CarsView() {
       ).slice(0, 6)
     : []
 
-  const inactiveCount = cars.filter(c => idleOf(c.id)).length
-  const activeCount = cars.length - inactiveCount
+  // Убранные (проданы/разбиты) с текущего месяца — в отдельном списке внизу
+  const curP = format(new Date(), 'yyyy-MM-01')
+  const fleetCars = cars.filter(c => !c.removed_from || c.removed_from > curP)
+  const goneCars = cars.filter(c => c.removed_from && c.removed_from <= curP)
+  const leavingLabel = (c: Car) => c.removed_from && c.removed_from > curP ? `Уходит с ${format(parseISO(c.removed_from), 'MMMM', { locale: ru })}` : ''
+  const inactiveCount = fleetCars.filter(c => idleOf(c.id)).length
+  const activeCount = fleetCars.length - inactiveCount
 
 
   return (
@@ -173,7 +189,7 @@ export default function CarsView() {
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         {[
-          { label: 'Всего', value: cars.length, color: 'text-gray-900', bg: 'bg-white' },
+          { label: 'Всего', value: fleetCars.length, color: 'text-gray-900', bg: 'bg-white' },
           { label: 'В работе', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: 'В простое', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
         ].map(s => (
@@ -228,7 +244,7 @@ export default function CarsView() {
         ) : (<>
           {/* Телефон — карточки */}
           <div className="sm:hidden divide-y divide-gray-100">
-            {cars.map(car => {
+            {fleetCars.map(car => {
               const block = shownBlock(car.id)
               return (
                 <div
@@ -240,6 +256,7 @@ export default function CarsView() {
                     <div className="min-w-0">
                       <button onClick={() => setOpenCar(car)} className="block max-w-full text-left font-semibold text-gray-900 truncate">{car.make} {car.model}</button>
                       <span className="inline-block mt-1 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg text-xs font-mono font-semibold">{car.plate}</span>
+                      {leavingLabel(car) && <span className="inline-block mt-1 ml-1.5 bg-orange-50 text-orange-600 px-2 py-0.5 rounded-lg text-xs font-semibold">{leavingLabel(car)}</span>}
                     </div>
                     <button
                       onClick={() => setInactiveModal(car)}
@@ -275,7 +292,7 @@ export default function CarsView() {
                 </div>
               )
             })}
-            {cars.length === 0 && <p className="px-4 py-12 text-center text-gray-400 text-sm">Авто не добавлено</p>}
+            {fleetCars.length === 0 && <p className="px-4 py-12 text-center text-gray-400 text-sm">Авто не добавлено</p>}
           </div>
 
           {/* Компьютер — таблица */}
@@ -291,7 +308,7 @@ export default function CarsView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {cars.map(car => (
+              {fleetCars.map(car => (
                 <tr
                   key={car.id}
                   ref={el => { rowRefs.current[car.id] = el }}
@@ -302,6 +319,7 @@ export default function CarsView() {
                   </td>
                   <td className="px-6 py-4">
                     <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold">{car.plate}</span>
+                    {leavingLabel(car) && <span className="ml-2 bg-orange-50 text-orange-600 px-2 py-1 rounded-lg text-xs font-semibold whitespace-nowrap">{leavingLabel(car)}</span>}
                   </td>
                   <td className="px-6 py-4">
                     <button
@@ -344,12 +362,33 @@ export default function CarsView() {
                   </td>
                 </tr>
               ))}
-              {cars.length === 0 && (
+              {fleetCars.length === 0 && (
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">Авто не добавлено</td></tr>
               )}
             </tbody>
           </table>
           </div>
+
+          {/* Убранные машины */}
+          {goneCars.length > 0 && (
+            <details className="border-t border-gray-100 group">
+              <summary className="px-4 sm:px-6 py-3.5 text-sm font-medium text-gray-500 cursor-pointer select-none list-none flex items-center justify-between">
+                <span>Проданы или разбиты · {goneCars.length}</span>
+                <span className="text-xs text-gray-400 group-open:hidden">показать</span>
+              </summary>
+              <ul className="divide-y divide-gray-100">
+                {goneCars.map(car => (
+                  <li key={car.id} className="flex items-center gap-3 px-4 sm:px-6 py-3">
+                    <button onClick={() => setOpenCar(car)} className="flex-1 min-w-0 text-left">
+                      <span className="block text-sm font-medium text-gray-700 truncate">{car.make} {car.model} <span className="font-mono text-xs text-gray-500">{car.plate}</span></span>
+                      <span className="block text-xs text-gray-400">нет в парке с {format(parseISO(car.removed_from!), 'MMMM yyyy', { locale: ru })}</span>
+                    </button>
+                    <button onClick={() => handleRestore(car)} className="btn-secondary inline-flex items-center gap-1.5 px-3 h-9 text-sm"><RotateCcw size={14} /> Вернуть</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </>)}
       </Card>
 
@@ -442,7 +481,7 @@ export default function CarsView() {
           </form>
         </Modal>
       )}
-      {openCar && <CarCard car={openCar} onClose={() => setOpenCar(null)} />}
+      {openCar && <CarCard car={openCar} onClose={() => setOpenCar(null)} onChanged={() => { setOpenCar(null); load() }} />}
     </div>
   )
 }

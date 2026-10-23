@@ -7,7 +7,7 @@ import { Car as CarIcon, DollarSign, Users, ArrowRight, Plus, Tag, ShieldAlert, 
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Car } from '@/types'
-import { calcSalary, calcEntry } from '@/lib/calc'
+import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
 
 
 const STICKER_INTERVAL = 45
@@ -97,7 +97,7 @@ export default function DashboardPage() {
       ])
 
       const allCars: Car[] = carsRes.data || []
-      const listed = allCars.filter(c => !c.delisted)
+      const listed = allCars.filter(c => inFleet(c, monthStart))
       const blocks: Block[] = (blocksRes.data as Block[]) || []
       const blockEnd = (b: Block) => (b.end_date ? parseISO(b.end_date) : new Date(9999, 0))
 
@@ -220,7 +220,7 @@ export default function DashboardPage() {
     load()
   }, [])
 
-  const listed = cars.filter(c => !c.delisted)
+  const listed = cars.filter(c => inFleet(c, format(startOfMonth(new Date()), 'yyyy-MM-dd')))
   const activeCount = listed.length - idle.length
   const monthName = format(new Date(), 'LLLL', { locale: ru })
 

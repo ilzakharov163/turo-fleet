@@ -1,7 +1,7 @@
 // Проверка формул: npm test
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit } from './calc.ts'
+import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit, inFleet } from './calc.ts'
 
 test('зарплата: < 14 дней простоя → 150, ≥ 14 → 75, весь месяц → 0', () => {
   assert.equal(calcSalary(0, 31), 150)
@@ -36,4 +36,13 @@ test('прибыль месяца = итоги − расходы компани
   assert.equal(monthExpensesTotal(exp), 1600)
   assert.equal(monthProfit(entries, exp, [{ amount: 250 }]), 3000 - 400 - 1600 - 250)
   assert.equal(monthProfit([], null, []), 0)
+})
+
+test('машина в парке: снятая с листинга и убранная с месяца не считаются', () => {
+  assert.equal(inFleet({ delisted: false, removed_from: null }, '2026-10-01'), true)
+  assert.equal(inFleet({ delisted: true, removed_from: null }, '2026-10-01'), false)
+  // убрана с ноября: в октябре ещё в парке, с ноября — нет
+  assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-10-01'), true)
+  assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-11-01'), false)
+  assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-12-01'), false)
 })

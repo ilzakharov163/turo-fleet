@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { X, CalendarDays, Receipt, ShieldAlert, Tag, Wallet, ChevronRight } from 'lucide-react'
-import { format, parseISO, addDays, differenceInCalendarDays, subMonths } from 'date-fns'
+import { X, CalendarDays, Receipt, ShieldAlert, Tag, Wallet, ChevronRight, Archive, RotateCcw } from 'lucide-react'
+import { format, parseISO, addDays, differenceInCalendarDays, subMonths, addMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase'
 import { canAny, useAccess } from '@/lib/access'
-import { calcEntry, calcSalary, idleDaysInMonth, num, type RevenueEntry } from '@/lib/calc'
+import { calcEntry, calcSalary, idleDaysInMonth, inFleet, num, type RevenueEntry } from '@/lib/calc'
+import { removeCarFrom, restoreCar } from '@/lib/fleet'
+import { ask, notify } from '@/lib/ui'
 import { Car } from '@/types'
 
 // Всё о машине на одном экране: простои, расходы, клеймы, наклейка, доход.
@@ -23,7 +25,7 @@ const CLAIM_STATUS: Record<string, string> = { waiting: 'Ждёт ремонта
 const fmt = (d: string) => format(parseISO(d), 'd MMM yyyy', { locale: ru })
 const usd = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
-export default function CarCard({ car, onClose }: { car: Car; onClose: () => void }) {
+export default function CarCard({ car, onClose, onChanged }: { car: Car; onClose: () => void; onChanged?: () => void }) {
   const access = useAccess()
   const [loading, setLoading] = useState(true)
   const [blocks, setBlocks] = useState<Block[]>([])
@@ -85,6 +87,25 @@ export default function CarCard({ car, onClose }: { car: Car; onClose: () => voi
 
   const show = (keys: string[]) => canAny(access, keys)
 
+  // «Продана или разбита»: со следующего месяца машины нет нигде; в этом месяце остаётся
+  const nextP = format(addMonths(new Date(), 1), 'yyyy-MM-01')
+  const fromWord = (p: string) => format(parseISO(p), 'MMMM', { locale: ru })   // «ноября»
+  const monthWord = (p: string) => format(parseISO(p), 'LLLL', { locale: ru })  // «октябрь»
+  async function removeCar() {
+    if (!await ask(`Убрать ${car.make} ${car.model} с ${fromWord(nextP)}?`, {
+      detail: `За ${monthWord(curP)} машина посчитается как обычно — можно внести Gross, зарплата за неё сохранится. С ${fromWord(nextP)} её не будет в «Авто», в зарплате и в «Доходах». Вернуть можно в этой же карточке.`,
+      ok: 'Убрать',
+    })) return
+    if (await removeCarFrom({ carId: car.id, from: nextP, canFleet: true, canIncome: canAny(access, ['/income']) })) {
+      notify(`Убрана с ${fromWord(nextP)}`, 'success'); onChanged?.()
+    }
+  }
+  async function restore() {
+    if (await restoreCar({ carId: car.id, from: car.removed_from || null, canFleet: true, canIncome: canAny(access, ['/income']) })) {
+      notify('Машина возвращена', 'success'); onChanged?.()
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-stretch sm:justify-end bg-black/30" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="w-full sm:w-[460px] max-h-[92vh] sm:max-h-none bg-white rounded-t-[24px] sm:rounded-none sm:rounded-l-[24px] shadow-2xl flex flex-col animate-in">
@@ -97,6 +118,7 @@ export default function CarCard({ car, onClose }: { car: Car; onClose: () => voi
                 <span className={`text-xs font-semibold rounded-md px-1.5 py-0.5 ${idle ? 'bg-red-50 text-red-500' : 'bg-emerald-50 text-emerald-600'}`}>{idle ? 'В простое' : 'В работе'}</span>
               )}
               {car.delisted && <span className="text-xs font-semibold rounded-md px-1.5 py-0.5 bg-orange-50 text-orange-500">Снята с листинга</span>}
+              {car.removed_from && <span className="text-xs font-semibold rounded-md px-1.5 py-0.5 bg-orange-50 text-orange-600">{car.removed_from > curP ? 'Уходит' : 'Нет в парке'} с {format(parseISO(car.removed_from), 'MMMM', { locale: ru })}</span>}
             </div>
           </div>
           <button onClick={onClose} className="p-2 -mr-2 rounded-xl text-gray-400 hover:bg-gray-100" aria-label="Закрыть"><X size={18} /></button>
@@ -111,7 +133,7 @@ export default function CarCard({ car, onClose }: { car: Car; onClose: () => voi
                 <Section icon={CalendarDays} title="Простои" href="/cars?tab=downtime">
                   <div className="grid grid-cols-2 gap-2">
                     <Stat label={`Простой за ${format(new Date(), 'LLLL', { locale: ru })}`} value={`${idleDays} дн.`} />
-                    <Stat label="Зарплата работника" value={`$${car.delisted ? 0 : calcSalary(idleDays, monthDays)}`} />
+                    <Stat label="Зарплата работника" value={`$${inFleet(car, curP) ? calcSalary(idleDays, monthDays) : 0}`} />
                   </div>
                   {idle && <p className="text-sm text-red-600 mt-2">Сейчас в простое с {fmt(idle.start_date)}{idle.end_date ? ` по ${fmt(idle.end_date)}` : ''}{idle.reason ? ` · ${idle.reason}` : ''}</p>}
                   {blocks.length > 0 && (
@@ -199,6 +221,16 @@ export default function CarCard({ car, onClose }: { car: Car; onClose: () => voi
                   )}
                 </Section>
               )}
+              {show(['/cars']) && (car.removed_from ? (
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm text-orange-700">
+                  <span>{car.removed_from > curP ? 'Уходит' : 'Нет в парке'} с {format(parseISO(car.removed_from), 'MMMM yyyy', { locale: ru })}</span>
+                  <button onClick={restore} className="inline-flex items-center gap-1.5 font-semibold"><RotateCcw size={14} /> Вернуть</button>
+                </div>
+              ) : (
+                <button onClick={removeCar} className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-2xl border border-gray-200 text-sm font-medium text-gray-600 hover:text-red-600 hover:border-red-200">
+                  <Archive size={16} /> Продана или разбита — убрать с {fromWord(nextP)}
+                </button>
+              ))}
             </>
           )}
         </div>

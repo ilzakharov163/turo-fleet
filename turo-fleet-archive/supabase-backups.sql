@@ -49,3 +49,6 @@ revoke execute on function public.make_backup(text) from public, anon;
 grant execute on function public.make_backup(text) to authenticated;
 
 select cron.schedule('daily-backup', '0 10 * * *', $$select public.make_backup('auto')$$);
+
+-- 23.10.2026, миграция cars_removed_from: с какого месяца машины нет в парке (продана/разбита)
+alter table public.cars add column if not exists removed_from date;

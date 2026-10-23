@@ -22,6 +22,12 @@ export function idleDaysInMonth(blocks: { start_date: string; end_date: string |
   return days
 }
 
+// ── Парк ──
+// Машина в парке в месяце period ('yyyy-MM-01'): не снята с листинга и не убрана (продана/разбита) к этому месяцу.
+// removed_from — первый месяц, когда машины уже нет; в предыдущих месяцах она считается как обычно.
+export const inFleet = (car: { delisted?: boolean | null; removed_from?: string | null }, period: string) =>
+  !car.delisted && (!car.removed_from || car.removed_from > period)
+
 // ── Доходы ──
 export interface ClaimItem { claim: number; supplement: number; pct: number }
 export interface OtherItem { desc?: string; amount: number }
