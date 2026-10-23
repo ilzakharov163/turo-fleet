@@ -7,7 +7,7 @@ import { Send, Copy, Check, Download, ChevronLeft, ChevronRight, Car as CarIcon,
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, isSameMonth, addMonths, subMonths, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { notify } from '@/lib/ui'
-import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
+import { calcSalary, calcEntry, inFleet, appliedDeductions, staffCost } from '@/lib/calc'
 
 // ── Типы ──
 interface Block {
@@ -251,8 +251,9 @@ export default function ReportsView() {
   const revGross = revRows.reduce((s, x) => s + x.gross, 0)
   const revTotal = revRows.reduce((s, x) => s + x.net, 0)
   const revPays = rev.pays.filter(x => x.period === revP).reduce((s, x) => s + num(x.amount), 0)
-  const revDed = deductions.filter(d => d.date.startsWith(revP.slice(0, 7))).reduce((s, d) => s + Number(d.amount), 0)
-  const revStaff = num(revExp?.salary1) + num(revExp?.salary2) - revDed
+  const revDedAll = deductions.filter(d => d.date.startsWith(revP.slice(0, 7))).reduce((s, d) => s + Number(d.amount), 0)
+  const revDed = appliedDeductions(num(revExp?.salary2), revDedAll)   // только из внесённой зарплаты
+  const revStaff = staffCost(num(revExp?.salary1), num(revExp?.salary2), revDedAll)
   const revCompany = (revExp?.items || []).reduce((s, i) => s + num(i.amount), 0)
   const revProfit = revTotal - revCompany - revStaff - revPays
   const incomeText = [

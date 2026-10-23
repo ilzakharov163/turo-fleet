@@ -19,7 +19,7 @@ import DeductionsEditor, { type Deduction } from '@/components/DeductionsEditor'
 import Popover from '@/components/ui/Popover'
 import { canAny, useAccess } from '@/lib/access'
 import { removeCarFrom, restoreCar } from '@/lib/fleet'
-import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
+import { calcSalary, calcEntry, inFleet, appliedDeductions, staffCost } from '@/lib/calc'
 
 // ── Типы ──
 type ClaimItem = { claim: number; supplement: number; pct: number }
@@ -370,7 +370,8 @@ function ExpensesPanel({ value, period, payroll, deductions, onDeductionsChanged
 
   const itemsTotal = draft.items.reduce((s, i) => s + i.amount, 0)
   const dedTotal = deductions.reduce((s, d) => s + n(d.amount), 0)
-  const staffTotal = draft.salary1 + draft.salary2 - dedTotal
+  const dedApplied = appliedDeductions(draft.salary2, dedTotal)
+  const staffTotal = staffCost(draft.salary1, draft.salary2, dedTotal)
   const total = itemsTotal + staffTotal
   
   return (
@@ -412,8 +413,11 @@ function ExpensesPanel({ value, period, payroll, deductions, onDeductionsChanged
           </div>
           <div className="rounded-xl bg-gray-50 px-3 py-2.5 text-sm space-y-1">
             <div className="flex justify-between text-gray-500"><span>Расходы + зарплата</span><span className="tabular-nums">{money(draft.salary1 + draft.salary2)}</span></div>
-            {dedTotal > 0 && <div className="flex justify-between text-rose-500"><span>Штрафы и вычеты</span><span className="tabular-nums">−{money(dedTotal)}</span></div>}
+            {dedApplied > 0 && <div className="flex justify-between text-rose-500"><span>Штрафы и вычеты (из зарплаты)</span><span className="tabular-nums">−{money(dedApplied)}</span></div>}
             <div className="flex justify-between font-semibold text-gray-900 pt-1 border-t border-gray-200"><span>Итого на сотрудника</span><span className="tabular-nums">{money(staffTotal)}</span></div>
+            {dedTotal > dedApplied && (
+              <p className="text-xs text-gray-500 pt-1">{draft.salary2 > 0 ? `Вычеты больше зарплаты — вычтено ${money(dedApplied)}.` : `Вычеты ${money(dedTotal)} отнимутся от зарплаты, когда вы её внесёте в конце месяца.`}</p>
+            )}
           </div>
         </div>
 
@@ -710,12 +714,14 @@ export default function IncomePage() {
     const exp = monthExp.find(m => m.period === p) || null
     const pays = payments.filter(x => x.period === p).reduce((s, x) => s + n(x.amount), 0)
     // Три статьи: расходы компании (покупки), затраты на сотрудника (расходы + зарплата − штрафы/вычеты), платежи
-    const ded = deductions.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + n(x.amount), 0)
+    // Вычеты отнимаются только от внесённой зарплаты (зарплату вносят в конце месяца)
+    const dedAll = deductions.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + n(x.amount), 0)
+    const ded = appliedDeductions(n(exp?.salary2), dedAll)
     const company = (exp?.items || []).reduce((s, i) => s + n(i.amount), 0)
-    const staff = n(exp?.salary1) + n(exp?.salary2) - ded
+    const staff = staffCost(n(exp?.salary1), n(exp?.salary2), dedAll)
     const expenses = company + staff
-    const has = entries.some(e => e.period === p) || expTotal(exp) > 0 || pays > 0 || ded > 0
-    return { accs, total, exp, company, staff, ded, expenses, pays, profit: total.net - expenses - pays, has }
+    const has = entries.some(e => e.period === p) || expTotal(exp) > 0 || pays > 0 || dedAll > 0
+    return { accs, total, exp, company, staff, ded, dedPending: dedAll - ded, expenses, pays, profit: total.net - expenses - pays, has }
   }, [accountsIn, accTotals, carsIn, monthExp, entries, payments, deductions])
 
   // Месяцы для ленты: от первого месяца с данными до текущего
@@ -1203,7 +1209,7 @@ export default function IncomePage() {
                   </tr>
                   <tr className="cursor-pointer text-gray-600 hover:bg-gray-50" onClick={() => setView('expenses')}>
                     <td className="sticky left-0 z-10 bg-white border-b border-r border-gray-200 px-4 py-2.5">Затраты на сотрудника</td>
-                    <td colSpan={4} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">расходы {money(n(sum.exp?.salary1))} · зарплата {money(n(sum.exp?.salary2))}{sum.ded ? ` · вычеты −${abs(sum.ded)}` : ''}</td>
+                    <td colSpan={4} className="border-b border-r border-gray-200 px-3 py-2.5 text-right text-xs text-gray-400">расходы {money(n(sum.exp?.salary1))} · зарплата {money(n(sum.exp?.salary2))}{sum.ded ? ` · вычеты −${abs(sum.ded)}` : ''}{sum.dedPending ? ` · вычеты ${money(sum.dedPending)} — после ввода зарплаты` : ''}</td>
                     <td className="border-b border-r border-gray-200 px-3 py-2.5 text-right">−{abs(sum.staff)}</td>
                     <td className="border-b border-gray-200" />
                   </tr>

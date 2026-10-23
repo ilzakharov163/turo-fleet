@@ -7,7 +7,7 @@ import { Car as CarIcon, DollarSign, Users, ArrowRight, Plus, Tag, ShieldAlert, 
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Car } from '@/types'
-import { calcSalary, calcEntry, inFleet } from '@/lib/calc'
+import { calcSalary, calcEntry, inFleet, appliedDeductions } from '@/lib/calc'
 
 
 const STICKER_INTERVAL = 45
@@ -213,8 +213,9 @@ export default function DashboardPage() {
         const exp = num(m?.salary1) + num(m?.salary2) + (m?.items || []).reduce((s, i) => s + num(i.amount), 0)
         const pay = pays.filter(x => x.period === p).reduce((s, x) => s + num(x.amount), 0)
         // Штрафы/вычеты уменьшают затраты на сотрудника
-        const ded = deds.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + num(x.amount), 0)
-        return { value: net - exp + ded - pay, has: entries.some(e => e.period === p) || exp > 0 || pay > 0 || ded > 0 }
+        const dedAll = deds.filter(x => x.date.startsWith(p.slice(0, 7))).reduce((s, x) => s + num(x.amount), 0)
+        const ded = appliedDeductions(num(m?.salary2), dedAll)   // только из внесённой зарплаты
+        return { value: net - exp + ded - pay, has: entries.some(e => e.period === p) || exp > 0 || pay > 0 || dedAll > 0 }
       }
       const cur = monthProfit(period)
       const prev = monthProfit(format(subMonths(parseISO(period), 1), 'yyyy-MM-01'))

@@ -1,7 +1,7 @@
 // Проверка формул: npm test
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit, inFleet } from './calc.ts'
+import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit, inFleet, staffCost } from './calc.ts'
 
 test('зарплата: < 14 дней простоя → 150, ≥ 14 → 75, весь месяц → 0', () => {
   assert.equal(calcSalary(0, 31), 150)
@@ -43,8 +43,10 @@ test('прибыль месяца = итоги − расходы компани
   assert.equal(monthExpensesTotal(exp), 1600)
   assert.equal(monthProfit(entries, exp, [{ amount: 250 }]), 3000 - 400 - 1600 - 250)
   assert.equal(monthProfit([], null, []), 0)
-  // штрафы/вычеты уменьшают затраты на сотрудника → прибыль больше
+  // вычеты уменьшают зарплату (зарплата 500 внесена) → затраты на сотрудника меньше
   assert.equal(monthProfit(entries, exp, [{ amount: 250 }], 40), 3000 - 400 - (1600 - 40) - 250)
+  // зарплата ещё не внесена — вычеты не учитываются
+  assert.equal(monthProfit(entries, { salary1: 1200, salary2: 0, items: [] }, [], 520), 3000 - 400 - 1200)
 })
 
 test('машина в парке: снятая с листинга и убранная с месяца не считаются', () => {
@@ -54,4 +56,11 @@ test('машина в парке: снятая с листинга и убран
   assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-10-01'), true)
   assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-11-01'), false)
   assert.equal(inFleet({ delisted: false, removed_from: '2026-11-01' }, '2026-12-01'), false)
+})
+
+test('затраты на сотрудника: вычеты только из внесённой зарплаты', () => {
+  assert.equal(staffCost(1200, 0, 520), 1200)        // зарплата не внесена — вычеты ждут конца месяца
+  assert.equal(staffCost(1200, 3450, 520), 1200 + 3450 - 520)
+  assert.equal(staffCost(1200, 300, 520), 1200)      // вычесть больше зарплаты нельзя
+  assert.equal(staffCost(1200, 3450), 4650)
 })
