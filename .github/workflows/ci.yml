@@ -1,0 +1,22 @@
+# Проверка при каждой отправке: формулы (npm test) и сборка сайта.
+name: Проверка
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: turo-fleet-archive
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: turo-fleet-archive/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
