@@ -4,11 +4,13 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car, Expense } from '@/types'
-import { Plus, Trash2, Edit2, Paperclip, Download, X, Image as ImageIcon, Camera, Search } from 'lucide-react'
+import { Plus, Trash2, Edit2, Paperclip, Download, X, Image as ImageIcon, Camera, Search, ListFilter, ChevronDown, Check } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import { format, parseISO, startOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
+import MonthPicker from '@/components/ui/MonthPicker'
+import Popover from '@/components/ui/Popover'
 import { notify, ask } from '@/lib/ui'
 import { inputCls } from '@/components/ui/PageShell'
 
@@ -25,7 +27,7 @@ export default function ExpensesPage() {
   const [uploading, setUploading] = useState(false)
   const [filterCar, setFilterCar] = useState('')
   const [filterMonth, setFilterMonth] = useState(format(new Date(), 'yyyy-MM'))
-  const [filterCat, setFilterCat] = useState('')
+  const [filterCats, setFilterCats] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [noReceipt, setNoReceipt] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -239,7 +241,7 @@ export default function ExpensesPage() {
     .filter(c => c.count > 0)
   const q = query.trim().toLowerCase()
   const filtered = baseFiltered.filter(e =>
-    (!filterCat || e.title === filterCat) &&
+    (filterCats.size === 0 || filterCats.has(e.title)) &&
     (!noReceipt || !e.files?.length) &&
     (!q || `${e.title} ${e.notes || ''} ${e.amount} ${e.car ? `${e.car.make} ${e.car.model} ${e.car.plate}` : ''}`.toLowerCase().includes(q)))
   const noReceiptCount = baseFiltered.filter(e => !e.files?.length).length
@@ -255,87 +257,92 @@ export default function ExpensesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 mb-5">
-        <p className="hidden sm:block text-sm text-gray-500">Расходы по машинам и чеки</p>
-        <button
-          onClick={openNew}
-          className="btn-primary flex items-center gap-2 px-4 py-2"
-        >
-          <Plus size={16} /> <span className="hidden sm:inline">Добавить расход</span><span className="sm:hidden">Добавить</span>
+      <div className="hidden sm:flex items-center justify-between gap-3 mb-5">
+        <p className="text-sm text-gray-500">Расходы по машинам и чеки</p>
+        {/* На телефоне добавляют круглой кнопкой «+» */}
+        <button onClick={openNew} className="hidden sm:flex btn-primary items-center gap-2 px-4 h-10">
+          <Plus size={16} /> Добавить расход
         </button>
       </div>
 
-      {/* Month tabs */}
-      <div className="flex gap-1.5 mb-5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-        <button
-          onClick={() => setFilterMonth('all')}
-          className={`px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${filterMonth === 'all' ? 'bg-[#4F46E5] text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
-        >
-          За год
-        </button>
-        {months.map(m => (
-          <button
-            key={m.value}
-            onClick={() => setFilterMonth(m.value)}
-            className={`px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all capitalize ${filterMonth === m.value ? 'bg-[#4F46E5] text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
+      {/* Фильтры — одна строка: месяц, статьи, машина, без чека, поиск */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <MonthPicker value={filterMonth} onChange={setFilterMonth} min={months[0].value} max={months[months.length - 1].value} allLabel="За 12 месяцев" className="w-full sm:w-auto" />
 
-      {/* Category filter */}
-      {catStats.length > 0 && (
-        <div className="flex gap-1.5 mb-4 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          <button
-            onClick={() => setFilterCat('')}
-            className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${!filterCat ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
-          >
-            Все статьи
-            <span className={`text-xs ${!filterCat ? 'text-white/70' : 'text-gray-400'}`}>{baseFiltered.length}</span>
-          </button>
-          {catStats.map(cat => {
-            const active = filterCat === cat.name
-            return (
-              <button
-                key={cat.name}
-                onClick={() => setFilterCat(active ? '' : cat.name)}
-                className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${active ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
-              >
-                {cat.name}
-                <span className={`text-xs ${active ? 'text-white/70' : 'text-gray-400'}`}>{cat.count} · ${cat.sum.toFixed(0)}</span>
-              </button>
-            )
-          })}
+        <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto">
+
+        <Popover
+          panelClass="sm:w-80"
+          trigger={(open, toggle) => (
+            <button onClick={toggle} className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 h-10 px-3 sm:px-3.5 rounded-xl border text-sm font-medium transition-colors ${filterCats.size ? 'bg-indigo-50 border-indigo-200 text-[#4F46E5] dark:text-indigo-300' : 'bg-white border-gray-200 text-gray-700'} ${open ? 'ring-2 ring-indigo-400/20' : ''}`}>
+              <ListFilter size={15} className="flex-shrink-0" />
+              <span className="truncate">{filterCats.size === 0 ? 'Статьи' : filterCats.size === 1 ? [...filterCats][0] : `Статьи: ${filterCats.size}`}</span>
+              <ChevronDown size={14} className="text-gray-400 flex-shrink-0 hidden sm:block" />
+            </button>
+          )}
+        >
+          {close => (
+            <div>
+              <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                <span className="text-sm font-semibold text-gray-900">Статьи расходов</span>
+                {filterCats.size > 0 && <button onClick={() => setFilterCats(new Set())} className="text-sm text-[#4F46E5] dark:text-indigo-300">Показать все</button>}
+              </div>
+              <div className="max-h-[50vh] sm:max-h-80 overflow-y-auto px-2 pb-2">
+                {catStats.length === 0 && <p className="px-2 py-4 text-sm text-gray-400">В этом месяце расходов нет</p>}
+                {catStats.map(cat => {
+                  const on = filterCats.has(cat.name)
+                  return (
+                    <button key={cat.name}
+                      onClick={() => setFilterCats(prev => { const n = new Set(prev); if (n.has(cat.name)) n.delete(cat.name); else n.add(cat.name); return n })}
+                      className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-gray-50 text-left">
+                      <span className={`w-5 h-5 rounded-md border flex items-center justify-center flex-shrink-0 ${on ? 'bg-[#4F46E5] border-[#4F46E5] text-white' : 'border-gray-300'}`}>{on && <Check size={13} strokeWidth={3} />}</span>
+                      <span className="flex-1 min-w-0 truncate text-sm text-gray-800">{cat.name}</span>
+                      <span className="text-xs tabular-nums text-gray-400">{cat.count} · ${cat.sum.toFixed(0)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="px-4 pb-4 pt-1 sm:hidden"><button onClick={close} className="btn-primary w-full h-11">Готово</button></div>
+            </div>
+          )}
+        </Popover>
+
+        <Select
+          value={filterCar}
+          onChange={setFilterCar}
+          options={[{ value: '', label: 'Машины' }, ...cars.map(c => ({ value: c.id, label: `${c.make} ${c.model} ${c.plate}` }))]}
+          block
+        />
+
+        <button
+          onClick={() => setNoReceipt(v => !v)}
+          className={`inline-flex items-center justify-center gap-1.5 h-10 px-3 sm:px-3.5 rounded-xl text-sm font-medium border transition-colors whitespace-nowrap ${noReceipt ? 'bg-indigo-50 border-indigo-200 text-[#4F46E5] dark:text-indigo-300' : 'bg-white text-gray-700 border-gray-200'}`}
+        >
+          Без чека <span className={`text-xs tabular-nums ${noReceipt ? '' : 'text-gray-400'}`}>{noReceiptCount}</span>
+        </button>
         </div>
-      )}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-5 sm:mb-6">
-        <div className="relative w-full sm:w-64">
+        <div className="relative w-full lg:w-auto lg:flex-1 lg:min-w-[220px] lg:max-w-sm lg:ml-auto">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Поиск: статья, машина, сумма…"
-            className="w-full h-10 pl-9 pr-8 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+            className="w-full h-10 pl-9 pr-8 text-base sm:text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
           />
           {query && <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" aria-label="Очистить"><X size={15} /></button>}
         </div>
-        <button
-          onClick={() => setNoReceipt(v => !v)}
-          className={`inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border transition-colors ${noReceipt ? 'bg-gray-900 text-white border-transparent' : 'bg-white text-gray-600 border-gray-200'}`}
-        >
-          Без чека <span className={`text-xs ${noReceipt ? 'text-white/70' : 'text-gray-400'}`}>{noReceiptCount}</span>
-        </button>
-        <Select
-          value={filterCar}
-          onChange={setFilterCar}
-          options={[{ value: '', label: 'Все авто' }, ...cars.map(c => ({ value: c.id, label: `${c.make} ${c.model} ${c.plate}` }))]}
-        />
-        {filtered.length > 0 && (
-          <span className="text-sm text-gray-500">Итого: <strong className="text-gray-900">${totalFiltered.toFixed(2)}</strong></span>
-        )}
       </div>
+
+      {/* Итоги по выбранному */}
+      {!loading && (
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 mb-3 px-1 text-sm">
+          <span className="text-gray-500">{filtered.length} {filtered.length % 10 === 1 && filtered.length % 100 !== 11 ? 'расход' : [2, 3, 4].includes(filtered.length % 10) && ![12, 13, 14].includes(filtered.length % 100) ? 'расхода' : 'расходов'}</span>
+          <span className="text-gray-500">Всего <b className="text-gray-900 tabular-nums">${totalFiltered.toFixed(2)}</b></span>
+          <span className="text-gray-500">Оплачено <b className="text-emerald-600 tabular-nums">${paidTotal.toFixed(2)}</b></span>
+          {unpaidTotal > 0 && <span className="text-gray-500">Не оплачено <b className="text-rose-500 tabular-nums">${unpaidTotal.toFixed(2)}</b></span>}
+        </div>
+      )}
 
       {loading ? <div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div> : (
         <div className="bg-white rounded-[18px] overflow-hidden card-shadow border border-gray-100/80">
@@ -463,22 +470,6 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      {!loading && filtered.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-1 mt-4 px-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Всего:</span>
-            <span className="text-lg font-bold text-gray-900">${totalFiltered.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Оплачено:</span>
-            <span className="text-lg font-bold text-emerald-600">${paidTotal.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">Осталось выплатить:</span>
-            <span className="text-lg font-bold text-rose-400">${unpaidTotal.toFixed(2)}</span>
-          </div>
-        </div>
-      )}
 
       {/* Floating add button (FAB) */}
       <button

@@ -16,9 +16,10 @@ interface SelectProps {
   options: Option[]
   placeholder?: string
   className?: string
+  block?: boolean  // кнопка на всю ширину (на телефоне)
 }
 
-export default function Select({ value, onChange, options, placeholder = 'Выберите...', className = '' }: SelectProps) {
+export default function Select({ value, onChange, options, placeholder = 'Выберите...', className = '', block = false }: SelectProps) {
   const [open, setOpen] = useState(false)
   const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 })
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -85,11 +86,11 @@ export default function Select({ value, onChange, options, placeholder = 'Выб
         ref={btnRef}
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-2 border rounded-[10px] px-3.5 py-2 text-sm font-medium transition-all bg-white ${
-          open ? 'border-indigo-400 ring-2 ring-indigo-400/20 text-gray-900' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+        className={`${block ? 'w-full sm:w-auto justify-between' : ''} flex items-center gap-2 border rounded-xl h-10 px-3.5 text-sm font-medium transition-all bg-white ${
+          open ? 'border-indigo-400 ring-2 ring-indigo-400/20 text-gray-900' : 'border-gray-200 text-gray-700 hover:border-gray-300'
         }`}
       >
-        <span>{selected ? selected.label : placeholder}</span>
+        <span className="min-w-0 max-w-[200px] truncate">{selected ? selected.label : placeholder}</span>
         <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {dropdown}
