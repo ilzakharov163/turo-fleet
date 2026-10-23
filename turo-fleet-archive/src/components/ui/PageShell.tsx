@@ -34,9 +34,10 @@ export function Modal({ children, title, onClose }: {
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 bg-black/25 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-[20px] shadow-2xl w-full max-w-md" style={{ boxShadow: '0 20px 60px rgba(17,17,26,0.15), 0 4px 20px rgba(17,17,26,0.08)' }}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+    // На телефоне — панель снизу, на компьютере — окно по центру
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto animate-in" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-bold text-gray-900">{title}</h2>
           <button
             onClick={onClose}
@@ -45,7 +46,7 @@ export function Modal({ children, title, onClose }: {
             ✕
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="p-5 sm:p-6">{children}</div>
       </div>
     </div>
   )
@@ -60,7 +61,7 @@ export function FormField({ label, children }: { label: string; children: React.
   )
 }
 
-export const inputCls = "w-full border border-gray-200 rounded-[12px] px-3.5 py-2.5 text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 transition-all placeholder:text-gray-400"
+export const inputCls = "w-full border border-gray-200 rounded-[12px] px-3.5 py-2.5 text-base sm:text-sm bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 transition-all placeholder:text-gray-400"
 
 export function ModalActions({ children }: { children: React.ReactNode }) {
   return <div className="flex gap-3 pt-2">{children}</div>
@@ -71,7 +72,7 @@ export function SaveButton({ loading = false, label }: { loading?: boolean; labe
     <button
       type="submit"
       disabled={loading}
-      className="btn-primary flex-1 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="btn-primary flex-1 h-11"
     >
       {loading ? 'Сохраняем...' : (label || 'Сохранить')}
     </button>
@@ -83,7 +84,7 @@ export function CancelButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2.5 rounded-[10px] text-sm font-semibold transition-colors"
+      className="btn-secondary flex-1 h-11"
     >
       Отмена
     </button>

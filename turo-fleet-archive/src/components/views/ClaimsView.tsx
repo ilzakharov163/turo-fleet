@@ -8,6 +8,7 @@ import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote } from 'l
 import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
+import { ask } from '@/lib/ui'
 
 interface Claim {
   id: string
@@ -118,11 +119,11 @@ export default function ClaimsView() {
     }
     if (editClaim) {
       const { error } = await supabase.from('claims').update(payload).eq('id', editClaim.id)
-      if (error) { alert(error.message); return }
+      if (error) { return }
       await log('update', 'claim', editClaim.id, payload)
     } else {
       const { data, error } = await supabase.from('claims').insert(payload).select().single()
-      if (error) { alert(error.message); return }
+      if (error) { return }
       if (data) await log('create', 'claim', data.id, payload)
     }
     setShowModal(false)
@@ -130,7 +131,7 @@ export default function ClaimsView() {
   }
 
   async function handleDelete(c: Claim) {
-    if (!confirm('Удалить клейм?')) return
+    if (!await ask('Удалить клейм?', { ok: 'Удалить', danger: true })) return
     const supabase = createClient()
     await supabase.from('claims').delete().eq('id', c.id)
     await log('delete', 'claim', c.id, { car_id: c.car_id })
@@ -143,7 +144,7 @@ export default function ClaimsView() {
     setClaims(prev => prev.map(x => (x.id === c.id ? { ...x, [field]: val } : x)))
     const supabase = createClient()
     const { error } = await supabase.from('claims').update({ [field]: val }).eq('id', c.id)
-    if (error) { alert(error.message); load(); return }
+    if (error) { load(); return }
     await log('update', 'claim', c.id, { [field]: val })
   }
 
@@ -151,7 +152,7 @@ export default function ClaimsView() {
     const supabase = createClient()
     const update = { status, completed_date: status === 'done' ? today() : null }
     const { error } = await supabase.from('claims').update(update).eq('id', c.id)
-    if (error) { alert(error.message); return }
+    if (error) { return }
     await log('update', 'claim', c.id, update)
     load()
   }

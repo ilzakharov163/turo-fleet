@@ -120,7 +120,7 @@ export default function LogView() {
         />
       </div>
 
-      {loading ? <div className="text-gray-400">Загрузка...</div> : (
+      {loading ? <div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div> : (
         <div className="bg-white rounded-[18px] overflow-hidden card-shadow border border-gray-100/80">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">

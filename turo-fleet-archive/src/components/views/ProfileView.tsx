@@ -105,7 +105,7 @@ export default function ProfileView() {
     router.push('/login')
   }
 
-  if (loading) return <div className="p-8 text-gray-400">Загрузка...</div>
+  if (loading) return <div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div>
 
   const roleCfg = roleLabels[role]
 

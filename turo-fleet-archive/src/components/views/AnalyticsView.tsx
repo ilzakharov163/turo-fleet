@@ -23,7 +23,7 @@ export default function AnalyticsView() {
       const supabase = createClient()
       const { data: carsData } = await supabase.from('cars').select('*').order('make')
       setCars(carsData || [])
-      const { data: expData } = await supabase.from('expenses').select('title, amount, date, car_id')
+      const { data: expData } = await supabase.from('expenses').select('title, amount, date, car_id').gte('date', format(startOfMonth(subMonths(new Date(), 11)), 'yyyy-MM-dd'))
       setAllExpenses(expData || [])
       setLoading(false)
     }
@@ -103,7 +103,7 @@ export default function AnalyticsView() {
         )}
       </div>
 
-      {loading ? <div className="text-gray-400">Загрузка...</div> : (
+      {loading ? <div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div> : (
         <div className="space-y-8">
           {/* Summary card */}
           <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80">
@@ -127,9 +127,9 @@ export default function AnalyticsView() {
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null
                       return (
-                        <div style={{ background: '#fff', borderRadius: 12, padding: '8px 14px', border: '1px solid rgba(17,17,26,0.06)' }}>
-                          <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 2 }}>{label}</p>
-                          <p style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1 }}>${Number(payload[0].value).toFixed(2)}</p>
+                        <div style={{ background: 'var(--color-white)', borderRadius: 12, padding: '8px 14px', border: '1px solid rgba(17,17,26,0.06)' }}>
+                          <p style={{ fontSize: 12, color: 'var(--color-gray-400)', marginBottom: 2 }}>{label}</p>
+                          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-gray-900)', lineHeight: 1 }}>${Number(payload[0].value).toFixed(2)}</p>
                         </div>
                       )
                     }}
@@ -153,9 +153,9 @@ export default function AnalyticsView() {
                     content={({ active, payload, label }) => {
                       if (!active || !payload?.length) return null
                       return (
-                        <div style={{ background: '#fff', borderRadius: 12, padding: '8px 14px', border: '1px solid rgba(17,17,26,0.06)' }}>
-                          <p style={{ fontSize: 12, color: '#9CA3AF', marginBottom: 2 }}>{label}</p>
-                          <p style={{ fontSize: 16, fontWeight: 700, color: '#111827', lineHeight: 1 }}>${Number(payload[0].value).toFixed(2)}</p>
+                        <div style={{ background: 'var(--color-white)', borderRadius: 12, padding: '8px 14px', border: '1px solid rgba(17,17,26,0.06)' }}>
+                          <p style={{ fontSize: 12, color: 'var(--color-gray-400)', marginBottom: 2 }}>{label}</p>
+                          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--color-gray-900)', lineHeight: 1 }}>${Number(payload[0].value).toFixed(2)}</p>
                         </div>
                       )
                     }}

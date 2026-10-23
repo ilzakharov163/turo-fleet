@@ -1,6 +1,5 @@
 'use client'
 
-import { Bell } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
@@ -59,15 +58,11 @@ export default function TopBar({ pathname }: { pathname: string }) {
   const title = pageTitles[pathname] || 'Fleet Manager'
 
   return (
-    <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 sticky top-0 z-30">
+    <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
       <h1 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h1>
 
       <div className="flex items-center gap-3">
-        <button className="relative w-9 h-9 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors">
-          <Bell size={17} />
-        </button>
-
-        <Link href="/settings" className="flex items-center gap-2.5 pl-3 border-l border-gray-200 rounded-lg py-1 pr-2 hover:bg-gray-50 transition-colors" title="Личный кабинет">
+        <Link href="/settings" className="flex items-center gap-2.5 rounded-lg py-1 pr-2 hover:bg-gray-50 transition-colors" title="Личный кабинет">
           <div className="w-9 h-9 rounded-[12px] bg-[#4F46E5] flex items-center justify-center text-white text-xs font-bold" >
             {initials}
           </div>

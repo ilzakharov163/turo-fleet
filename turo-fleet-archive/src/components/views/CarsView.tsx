@@ -7,6 +7,7 @@ import { Car, CarBlock } from '@/types'
 import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye } from 'lucide-react'
 import { Card, Modal, FormField, inputCls, ModalActions, SaveButton, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
+import CarCard from '@/components/CarCard'
 import { format, parseISO } from 'date-fns'
 
 function fmtDate(d: string) {
@@ -31,6 +32,7 @@ export default function CarsView() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const rowRefs = useRef<Record<string, HTMLElement | null>>({})
   const [carBlocks, setCarBlocks] = useState<CarBlock[]>([])
+  const [openCar, setOpenCar] = useState<Car | null>(null)
 
   async function load() {
     const supabase = createClient()
@@ -62,6 +64,12 @@ export default function CarsView() {
   }
 
   useEffect(() => { load() }, [])
+
+  // Статус машины — только по простоям: в простое, если сегодня попадает в простой
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const idleOf = (carId: string) => carBlocks.find(b => b.car_id === carId && b.start_date <= today && (!b.end_date || b.end_date >= today))
+  const shownBlock = (carId: string) => idleOf(carId)
+    || carBlocks.filter(b => b.car_id === carId && b.start_date > today).sort((a, b) => a.start_date.localeCompare(b.start_date))[0]
 
   function validate(f: typeof form) {
     const errors: Record<string, string> = {}
@@ -105,23 +113,24 @@ export default function CarsView() {
   async function handleToggleInactive() {
     if (!inactiveModal) return
     const supabase = createClient()
-    const newStatus = inactiveModal.status === 'active' ? 'inactive' : 'active'
-    const today = format(new Date(), 'yyyy-MM-dd')
+    const current = idleOf(inactiveModal.id)
+    const newStatus = current ? 'active' : 'inactive'
     const yesterday = format(new Date(Date.now() - 86400000), 'yyyy-MM-dd')
 
     if (newStatus === 'inactive') {
-      await supabase.from('car_blocks').insert({
+      const { error } = await supabase.from('car_blocks').insert({
         car_id: inactiveModal.id,
         start_date: inactiveDate || today,
         end_date: inactiveEndDate || null,
         reason: inactiveReason || null,
       })
-    } else {
-      const { data: openBlocks } = await supabase
-        .from('car_blocks').select('id').eq('car_id', inactiveModal.id).is('end_date', null)
-      if (openBlocks?.length) {
-        await supabase.from('car_blocks').update({ end_date: yesterday }).eq('id', openBlocks[0].id)
-      }
+      if (error) return
+    } else if (current) {
+      // Вернуть в работу: простой заканчивается вчера (если начался сегодня — простоя не было)
+      const { error } = current.start_date >= today
+        ? await supabase.from('car_blocks').delete().eq('id', current.id)
+        : await supabase.from('car_blocks').update({ end_date: yesterday }).eq('id', current.id)
+      if (error) return
     }
 
     await supabase.from('cars').update({ status: newStatus, inactive_reason: newStatus === 'inactive' ? inactiveReason : null, updated_at: new Date().toISOString() }).eq('id', inactiveModal.id)
@@ -155,8 +164,8 @@ export default function CarsView() {
       ).slice(0, 6)
     : []
 
-  const activeCount = cars.filter(c => c.status === 'active').length
-  const inactiveCount = cars.filter(c => c.status === 'inactive').length
+  const inactiveCount = cars.filter(c => idleOf(c.id)).length
+  const activeCount = cars.length - inactiveCount
 
 
   return (
@@ -165,8 +174,8 @@ export default function CarsView() {
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
         {[
           { label: 'Всего', value: cars.length, color: 'text-gray-900', bg: 'bg-white' },
-          { label: 'Активных', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Неактивных', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
+          { label: 'В работе', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: 'В простое', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-[18px] p-3 sm:p-4 border border-gray-100/80 card-shadow min-w-0`}>
             <p className="text-xs text-gray-400 font-medium mb-1 truncate">{s.label}</p>
@@ -215,12 +224,12 @@ export default function CarsView() {
         </div>
 
         {loading ? (
-          <div className="px-6 py-10 text-center text-gray-400 text-sm">Загрузка...</div>
+          <div className="p-4"><div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div></div>
         ) : (<>
           {/* Телефон — карточки */}
           <div className="sm:hidden divide-y divide-gray-100">
             {cars.map(car => {
-              const block = carBlocks.find(b => b.car_id === car.id)
+              const block = shownBlock(car.id)
               return (
                 <div
                   key={car.id}
@@ -229,28 +238,28 @@ export default function CarsView() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold text-gray-900 truncate">{car.make} {car.model}</p>
+                      <button onClick={() => setOpenCar(car)} className="block max-w-full text-left font-semibold text-gray-900 truncate">{car.make} {car.model}</button>
                       <span className="inline-block mt-1 bg-gray-100 text-gray-600 px-2 py-0.5 rounded-lg text-xs font-mono font-semibold">{car.plate}</span>
                     </div>
                     <button
                       onClick={() => setInactiveModal(car)}
                       className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${
-                        car.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
+                        !idleOf(car.id) ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
                       }`}
                     >
-                      {car.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                      {car.status === 'active' ? 'Активен' : 'Неактивен'}
+                      {!idleOf(car.id) ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {!idleOf(car.id) ? 'В работе' : 'В простое'}
                     </button>
                   </div>
-                  {(block || car.inactive_reason) && (
+                  {block && (
                     <button
-                      onClick={() => { if (block) { setEditBlock(block); setEditBlockForm({ start_date: block.start_date, end_date: block.end_date || '', reason: block.reason || '' }) } }}
+                      onClick={() => { setEditBlock(block); setEditBlockForm({ start_date: block.start_date, end_date: block.end_date || '', reason: block.reason || '' }) }}
                       className="mt-2 w-full text-left text-xs text-gray-500 bg-gray-50 rounded-lg px-2.5 py-1.5 flex items-center gap-2"
                     >
                       <span className="flex-1 min-w-0 truncate">
-                        {block ? `${fmtDate(block.start_date)}${block.end_date ? ` — ${fmtDate(block.end_date)}` : ''}${block.reason ? ` · ${block.reason}` : ''}` : car.inactive_reason}
+                        {block.start_date > today ? 'с ' : ''}{`${fmtDate(block.start_date)}${block.end_date ? ` — ${fmtDate(block.end_date)}` : ''}${block.reason ? ` · ${block.reason}` : ''}`}
                       </span>
-                      {block && <Edit2 size={12} className="flex-shrink-0 text-gray-400" />}
+                      <Edit2 size={12} className="flex-shrink-0 text-gray-400" />
                     </button>
                   )}
                   <div className="mt-2.5 flex items-center gap-1.5">
@@ -288,7 +297,9 @@ export default function CarsView() {
                   ref={el => { rowRefs.current[car.id] = el }}
                   className={`transition-colors ${highlightId === car.id ? 'bg-indigo-50' : 'hover:bg-gray-50/60'}`}
                 >
-                  <td className="px-6 py-4 font-semibold text-gray-900">{car.make} {car.model}</td>
+                  <td className="px-6 py-4 font-semibold text-gray-900">
+                    <button onClick={() => setOpenCar(car)} className="hover:text-[#4F46E5] hover:underline underline-offset-2 text-left">{car.make} {car.model}</button>
+                  </td>
                   <td className="px-6 py-4">
                     <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold">{car.plate}</span>
                   </td>
@@ -296,19 +307,19 @@ export default function CarsView() {
                     <button
                       onClick={() => setInactiveModal(car)}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                        car.status === 'active'
+                        !idleOf(car.id)
                           ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                           : 'bg-red-50 text-red-500 hover:bg-red-100'
                       }`}
                     >
-                      {car.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
-                      {car.status === 'active' ? 'Активен' : 'Неактивен'}
+                      {!idleOf(car.id) ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                      {!idleOf(car.id) ? 'В работе' : 'В простое'}
                     </button>
                   </td>
                   <td className="px-6 py-4 text-gray-400 text-xs">
                     {(() => {
-                      const block = carBlocks.find(b => b.car_id === car.id)
-                      if (!block) return car.inactive_reason || '—'
+                      const block = shownBlock(car.id)
+                      if (!block) return '—'
                       return (
                         <span className="flex items-center gap-2">
                           <span>{fmtDate(block.start_date)} {block.end_date ? `— ${fmtDate(block.end_date)}` : ''}{block.reason ? ` · ${block.reason}` : ''}</span>
@@ -386,9 +397,9 @@ export default function CarsView() {
 
       {/* Status Modal */}
       {inactiveModal && (
-        <Modal title={inactiveModal.status === 'active' ? 'Деактивировать авто' : 'Активировать авто'} onClose={() => { setInactiveModal(null); setInactiveReason(''); setInactiveDate(''); setInactiveEndDate('') }}>
+        <Modal title={!idleOf(inactiveModal.id) ? 'Отметить простой' : 'Вернуть в работу'} onClose={() => { setInactiveModal(null); setInactiveReason(''); setInactiveDate(''); setInactiveEndDate('') }}>
           <p className="text-sm text-gray-500 mb-5 -mt-1">{inactiveModal.make} {inactiveModal.model} <span className="font-mono bg-gray-100 px-2 py-0.5 rounded-lg text-xs">{inactiveModal.plate}</span></p>
-          {inactiveModal.status === 'active' && (
+          {!idleOf(inactiveModal.id) && (
             <div className="space-y-4 mb-5">
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Дата с">
@@ -404,8 +415,8 @@ export default function CarsView() {
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={handleToggleInactive} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all ${inactiveModal.status === 'active' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-              {inactiveModal.status === 'active' ? 'Деактивировать' : 'Активировать'}
+            <button onClick={handleToggleInactive} className={`flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all ${!idleOf(inactiveModal.id) ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+              {!idleOf(inactiveModal.id) ? 'В простой' : 'Вернуть в работу'}
             </button>
             <CancelButton onClick={() => { setInactiveModal(null); setInactiveReason(''); setInactiveDate(''); setInactiveEndDate('') }} />
           </div>
@@ -431,6 +442,7 @@ export default function CarsView() {
           </form>
         </Modal>
       )}
+      {openCar && <CarCard car={openCar} onClose={() => setOpenCar(null)} />}
     </div>
   )
 }

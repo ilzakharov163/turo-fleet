@@ -6,6 +6,7 @@ import { log } from '@/lib/logger'
 import { Shield, Users, UserCog, Pencil, X, Check, Info } from 'lucide-react'
 import { format, parseISO, formatDistanceToNow } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { notify } from '@/lib/ui'
 
 type Role = 'admin' | 'partner' | 'employee'
 
@@ -89,7 +90,7 @@ export default function TeamView() {
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!edit) return
-    if (form.role !== 'admin' && form.permissions.length === 0) { alert('Отметь хотя бы один раздел'); return }
+    if (form.role !== 'admin' && form.permissions.length === 0) { notify('Отметь хотя бы один раздел', 'error'); return }
     setSaving(true)
     const supabase = createClient()
     const perms = SECTIONS.map(s => s.href).filter(h => form.permissions.includes(h))
@@ -97,7 +98,7 @@ export default function TeamView() {
       p_id: edit.id, p_role: form.role, p_permissions: form.role === 'admin' ? [] : perms, p_full_name: form.full_name,
     })
     setSaving(false)
-    if (error) { alert(error.message); return }
+    if (error) { return }
     await log('update', 'team_member', edit.id, { email: edit.email, role: form.role, permissions: perms })
     setEdit(null)
     load()
@@ -117,7 +118,7 @@ export default function TeamView() {
       ) : (
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden divide-y divide-gray-100">
           {loading ? (
-            <div className="px-5 py-10 text-center text-sm text-gray-400">Загрузка...</div>
+            <div className="p-5 space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-14" />)}</div>
           ) : members.map(m => {
             const rc = roleCfg(m.role)
             const isMe = m.id === me

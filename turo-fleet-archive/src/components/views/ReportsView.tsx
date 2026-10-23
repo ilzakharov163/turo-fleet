@@ -6,6 +6,8 @@ import { Car } from '@/types'
 import { Send, Copy, Check, Download, ChevronLeft, ChevronRight, Car as CarIcon, ShieldAlert, Users, Layers, Wallet } from 'lucide-react'
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, isSameMonth, addMonths, subMonths, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { notify } from '@/lib/ui'
+import { calcSalary, calcEntry } from '@/lib/calc'
 
 // ── Типы ──
 interface Block {
@@ -37,11 +39,8 @@ interface RevEntry { revenue_car_id: string; period: string; gross: number; repa
 interface RevExp { period: string; salary1: number; salary2: number; items: { desc: string; amount: number }[] }
 const num = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
 function revCalc(e?: RevEntry) {
-  if (!e) return { gross: 0, net: 0 }
-  const g = num(e.gross)
-  const cl = (e.claim_items || []).reduce((s, c) => s + num(c.claim) + num(c.supplement) - num(c.supplement) * num(c.pct), 0)
-  const o = (e.other_items || []).reduce((s, x) => s + num(x.amount), 0)
-  return { gross: g, net: g + cl - num(e.repair) - o }
+  const t = calcEntry(e)
+  return { gross: t.gross, net: t.net }
 }
 const usd = (v: number) => { const r = Math.round(v * 100) / 100; return `${r < 0 ? '−' : ''}$${Math.abs(r).toLocaleString('en-US', { maximumFractionDigits: 2 })}` }
 
@@ -56,12 +55,6 @@ interface Report {
   file: string
 }
 
-// Как в календаре: простой < 14 дн. → $150, 14+ → $75, весь месяц → $0
-function calcSalary(inactiveDays: number, totalDays: number): number {
-  if (inactiveDays >= totalDays) return 0
-  if (inactiveDays >= 14) return 75
-  return 150
-}
 
 const carName = (c?: { make: string; model: string; plate: string } | null) => (c ? `${c.make} ${c.model} ${c.plate}` : '— без авто —')
 const d = (iso: string) => format(parseISO(iso), 'd MMM', { locale: ru })
@@ -93,7 +86,7 @@ async function copyText(text: string, onCopied: () => void) {
     await navigator.clipboard.writeText(text)
     onCopied()
   } catch {
-    alert('Не удалось скопировать — попробуй ещё раз')
+    notify('Не удалось скопировать — попробуй ещё раз', 'error')
   }
 }
 

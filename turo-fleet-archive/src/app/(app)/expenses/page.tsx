@@ -4,11 +4,13 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car, Expense } from '@/types'
-import { Plus, Trash2, Edit2, Paperclip, Download, X, Image as ImageIcon } from 'lucide-react'
+import { Plus, Trash2, Edit2, Paperclip, Download, X, Image as ImageIcon, Camera, Search } from 'lucide-react'
 import Select from '@/components/ui/Select'
 import { format, parseISO, startOfMonth, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
+import { notify, ask } from '@/lib/ui'
+import { inputCls } from '@/components/ui/PageShell'
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -24,38 +26,25 @@ export default function ExpensesPage() {
   const [filterCar, setFilterCar] = useState('')
   const [filterMonth, setFilterMonth] = useState(format(new Date(), 'yyyy-MM'))
   const [filterCat, setFilterCat] = useState('')
+  const [query, setQuery] = useState('')
+  const [noReceipt, setNoReceipt] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [deleteExpense, setDeleteExpense] = useState<Expense | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
     const [carsRes, expRes] = await Promise.all([
       supabase.from('cars').select('*').order('make'),
-      supabase.from('expenses').select('*, car:cars(make,model,plate)').order('date', { ascending: true }).order('created_at', { ascending: true }),
+      // Только последние 12 месяцев — столько, сколько вкладок месяцев
+      supabase.from('expenses').select('*, car:cars(make,model,plate)').gte('date', format(startOfMonth(subMonths(new Date(), 11)), 'yyyy-MM-dd'))
+        .order('date', { ascending: true }).order('created_at', { ascending: true }),
     ])
     setCars(carsRes.data || [])
-    const exps = expRes.data as Expense[] || []
-    setExpenses(exps)
-
-    // Pre-generate signed URLs for all files
-    const allPaths = exps.flatMap(e => e.files || [])
-    if (allPaths.length > 0) {
-      const { data } = await supabase.storage.from('receipts').createSignedUrls(allPaths, 3600)
-      const map: Record<string, string> = {}
-      data?.forEach(({ path, signedUrl }) => { if (path && signedUrl) map[path] = signedUrl })
-      setSignedUrls(map)
-      // Prefetch images in background
-      data?.forEach(({ path, signedUrl }) => {
-        if (signedUrl && path && !path.toLowerCase().endsWith('.pdf')) {
-          const img = new Image()
-          img.src = signedUrl
-        }
-      })
-    }
+    setExpenses(expRes.data as Expense[] || [])
 
     setLoading(false)
   }, [])
@@ -66,7 +55,17 @@ export default function ExpensesPage() {
     if (signedUrls[path]) return signedUrls[path]
     const supabase = createClient()
     const { data } = await supabase.storage.from('receipts').createSignedUrl(path, 3600)
+    if (data?.signedUrl) setSignedUrls(m => ({ ...m, [path]: data.signedUrl }))
     return data?.signedUrl || ''
+  }
+
+  // Новый расход: подставляем машину и статью из последнего добавленного
+  function openNew() {
+    const last = [...expenses].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+    setEditExpense(null)
+    setForm({ car_id: last?.car_id || '', title: last?.title || '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
+    setFiles([]); setExistingFiles([])
+    setShowModal(true)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,13 +73,14 @@ export default function ExpensesPage() {
     setUploading(true)
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { setUploading(false); return }
 
-    // Upload new files
+    // Upload new files; если чек не загрузился — не сохраняем, чтобы не потерять его
     const uploadedPaths: string[] = [...existingFiles]
     for (const file of files) {
-      const path = `${user.id}/${Date.now()}_${file.name}`
-      await supabase.storage.from('receipts').upload(path, file)
+      const path = `${user.id}/${Date.now()}_${file.name.replace(/[^\w.\-]+/g, '_')}`
+      const { error } = await supabase.storage.from('receipts').upload(path, file)
+      if (error) { setUploading(false); return }
       uploadedPaths.push(path)
     }
 
@@ -96,15 +96,18 @@ export default function ExpensesPage() {
     }
 
     if (editExpense) {
-      await supabase.from('expenses').update(payload).eq('id', editExpense.id)
+      const { error } = await supabase.from('expenses').update(payload).eq('id', editExpense.id)
+      if (error) { setUploading(false); return }
       await log('update', 'expense', editExpense.id, {
         old: { title: editExpense.title, amount: editExpense.amount },
         new: { title: form.title, amount: form.amount },
       })
     } else {
-      const { data } = await supabase.from('expenses').insert(payload).select().single()
+      const { data, error } = await supabase.from('expenses').insert(payload).select().single()
+      if (error) { setUploading(false); return }
       if (data) await log('create', 'expense', data.id, { title: form.title, amount: form.amount })
     }
+    notify(editExpense ? 'Расход сохранён' : 'Расход добавлен', 'success')
 
     setShowModal(false)
     setEditExpense(null)
@@ -115,15 +118,13 @@ export default function ExpensesPage() {
     load()
   }
 
-  async function handleDelete() {
-    if (!deleteExpense) return
+  async function handleDelete(exp: Expense) {
+    if (!await ask('Удалить расход?', { detail: `${exp.title} · $${Number(exp.amount).toFixed(2)} будет удалён безвозвратно.`, ok: 'Удалить', danger: true })) return
     const supabase = createClient()
-    if (deleteExpense.files?.length) {
-      await supabase.storage.from('receipts').remove(deleteExpense.files)
-    }
-    await supabase.from('expenses').delete().eq('id', deleteExpense.id)
-    await log('delete', 'expense', deleteExpense.id, { title: deleteExpense.title, amount: deleteExpense.amount })
-    setDeleteExpense(null)
+    const { error } = await supabase.from('expenses').delete().eq('id', exp.id)
+    if (error) return
+    if (exp.files?.length) await supabase.storage.from('receipts').remove(exp.files)
+    await log('delete', 'expense', exp.id, { title: exp.title, amount: exp.amount })
     load()
   }
 
@@ -162,8 +163,9 @@ export default function ExpensesPage() {
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(e.target.files || [])
+    e.target.value = ''
     const total = files.length + existingFiles.length + selected.length
-    if (total > 5) { alert('Максимум 5 файлов'); return }
+    if (total > 5) { notify('Максимум 5 файлов', 'error'); return }
     const compressed = await Promise.all(selected.map(compressImage))
     setFiles(prev => [...prev, ...compressed])
   }
@@ -212,7 +214,7 @@ export default function ExpensesPage() {
     setSelected(new Set())
     const supabase = createClient()
     const { error } = await supabase.from('expenses').update({ paid }).in('id', ids)
-    if (error) { alert('Ошибка: ' + error.message); load() }
+    if (error) { load() }
   }
 
   async function removeExistingFile(path: string) {
@@ -235,7 +237,12 @@ export default function ExpensesPage() {
       return { name, count: items.length, sum: items.reduce((s, e) => s + Number(e.amount), 0) }
     })
     .filter(c => c.count > 0)
-  const filtered = baseFiltered.filter(e => !filterCat || e.title === filterCat)
+  const q = query.trim().toLowerCase()
+  const filtered = baseFiltered.filter(e =>
+    (!filterCat || e.title === filterCat) &&
+    (!noReceipt || !e.files?.length) &&
+    (!q || `${e.title} ${e.notes || ''} ${e.amount} ${e.car ? `${e.car.make} ${e.car.model} ${e.car.plate}` : ''}`.toLowerCase().includes(q)))
+  const noReceiptCount = baseFiltered.filter(e => !e.files?.length).length
   const totalFiltered = filtered.reduce((s, e) => s + Number(e.amount), 0)
   const paidTotal = filtered.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
   const unpaidTotal = totalFiltered - paidTotal
@@ -251,7 +258,7 @@ export default function ExpensesPage() {
       <div className="flex items-center justify-end sm:justify-between gap-3 mb-5 sm:mb-6">
         <h1 className="hidden sm:block text-xl font-bold text-gray-900">Расходы</h1>
         <button
-          onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
+          onClick={openNew}
           className="btn-primary flex items-center gap-2 px-4 py-2"
         >
           <Plus size={16} /> <span className="hidden sm:inline">Добавить расход</span><span className="sm:hidden">Добавить</span>
@@ -264,7 +271,7 @@ export default function ExpensesPage() {
           onClick={() => setFilterMonth('all')}
           className={`px-3 py-1.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${filterMonth === 'all' ? 'bg-[#4F46E5] text-white' : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'}`}
         >
-          Все
+          За год
         </button>
         {months.map(m => (
           <button
@@ -303,7 +310,23 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-5 sm:mb-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mb-5 sm:mb-6">
+        <div className="relative w-full sm:w-64">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Поиск: статья, машина, сумма…"
+            className="w-full h-10 pl-9 pr-8 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+          />
+          {query && <button onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" aria-label="Очистить"><X size={15} /></button>}
+        </div>
+        <button
+          onClick={() => setNoReceipt(v => !v)}
+          className={`inline-flex items-center gap-1.5 h-10 px-3 rounded-xl text-sm font-medium border transition-colors ${noReceipt ? 'bg-gray-900 text-white border-transparent' : 'bg-white text-gray-600 border-gray-200'}`}
+        >
+          Без чека <span className={`text-xs ${noReceipt ? 'text-white/70' : 'text-gray-400'}`}>{noReceiptCount}</span>
+        </button>
         <Select
           value={filterCar}
           onChange={setFilterCar}
@@ -314,7 +337,7 @@ export default function ExpensesPage() {
         )}
       </div>
 
-      {loading ? <div className="text-gray-400">Загрузка...</div> : (
+      {loading ? <div className="space-y-3">{[0, 1, 2, 3].map(i => <div key={i} className="skeleton h-16" />)}</div> : (
         <div className="bg-white rounded-[18px] overflow-hidden card-shadow border border-gray-100/80">
           {/* Телефон — карточки */}
           <div className="sm:hidden divide-y divide-gray-100">
@@ -348,7 +371,7 @@ export default function ExpensesPage() {
                       )}
                       <span className="flex-1" />
                       <button onClick={() => openEdit(exp)} className="w-8 h-8 rounded-lg bg-gray-50 text-gray-500 flex items-center justify-center"><Edit2 size={14} /></button>
-                      <button onClick={() => setDeleteExpense(exp)} className="w-8 h-8 rounded-lg bg-gray-50 text-gray-400 flex items-center justify-center"><Trash2 size={14} /></button>
+                      <button onClick={() => handleDelete(exp)} className="w-8 h-8 rounded-lg bg-gray-50 text-gray-400 flex items-center justify-center"><Trash2 size={14} /></button>
                     </div>
                   </div>
                 </div>
@@ -425,7 +448,7 @@ export default function ExpensesPage() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openEdit(exp)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"><Edit2 size={15} /></button>
-                        <button onClick={() => setDeleteExpense(exp)} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={15} /></button>
+                        <button onClick={() => handleDelete(exp)} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"><Trash2 size={15} /></button>
                       </div>
                     </td>
                   </tr>
@@ -459,7 +482,7 @@ export default function ExpensesPage() {
 
       {/* Floating add button (FAB) */}
       <button
-        onClick={() => { setShowModal(true); setEditExpense(null); setForm({ car_id: '', title: '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') }); setFiles([]); setExistingFiles([]) }}
+        onClick={openNew}
         title="Добавить расход"
         className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] sm:bottom-6 right-4 sm:right-6 z-30 w-14 h-14 rounded-full bg-[#4F46E5] text-white flex items-center justify-center transition-all duration-300 hover:scale-105"
         style={{
@@ -491,42 +514,23 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      {/* Delete confirmation modal */}
-      {deleteExpense && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteExpense(null)}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Удалить расход?</h2>
-            <p className="text-sm text-gray-500 mb-6">
-              <span className="font-medium text-gray-800">{deleteExpense.title}</span> · ${Number(deleteExpense.amount).toFixed(2)} будет удалён безвозвратно.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={handleDelete} className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all">
-                Удалить
-              </button>
-              <button onClick={() => setDeleteExpense(null)} className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-all">
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-semibold mb-5">{editExpense ? 'Редактировать расход' : 'Добавить расход'}</h2>
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4">
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-md max-h-[92vh] overflow-y-auto" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <h2 className="text-lg font-bold text-gray-900 mb-5">{editExpense ? 'Редактировать расход' : 'Добавить расход'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Статья расходов</label>
-                <select required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                <select required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className={inputCls}>
                   <option value="">Выберите статью...</option>
                   {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Комментарий (необязательно)</label>
-                <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Доп. информация..." className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Доп. информация..." className={inputCls} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
@@ -546,7 +550,7 @@ export default function ExpensesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Сумма ($)</label>
-                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder="0.00" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder="0.00" className={inputCls} />
                 </div>
               </div>
 
@@ -568,23 +572,34 @@ export default function ExpensesPage() {
                   </div>
                 ))}
                 {(files.length + existingFiles.length) < 5 && (
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 border-2 border-dashed border-blue-200 hover:border-blue-400 rounded-lg px-4 py-3 w-full justify-center transition-colors"
-                  >
-                    <Paperclip size={15} /> Прикрепить фото
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => cameraRef.current?.click()}
+                      className="flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-medium text-[#4F46E5] dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                    >
+                      <Camera size={17} /> Сфотографировать
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      className="flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                    >
+                      <Paperclip size={16} /> Из галереи / файл
+                    </button>
+                  </div>
                 )}
+                {/* capture="environment" — сразу открывает заднюю камеру телефона */}
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
                 <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="hidden" />
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button type="submit" disabled={uploading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
-                  {uploading ? 'Сохраняем...' : 'Сохранить'}
-                </button>
-                <button type="button" onClick={() => { setShowModal(false); setEditExpense(null) }} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">
+                <button type="button" onClick={() => { setShowModal(false); setEditExpense(null) }} className="btn-secondary flex-1 h-11">
                   Отмена
+                </button>
+                <button type="submit" disabled={uploading} className="btn-primary flex-1 h-11">
+                  {uploading ? 'Сохраняем...' : 'Сохранить'}
                 </button>
               </div>
             </form>

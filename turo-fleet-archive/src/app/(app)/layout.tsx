@@ -4,6 +4,7 @@ import Sidebar from '@/components/layout/Sidebar'
 import TopBar from '@/components/layout/TopBar'
 import { usePathname } from 'next/navigation'
 import { ThemeProvider } from '@/components/ThemeContext'
+import Feedback from '@/components/ui/Feedback'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -18,6 +19,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <main className="flex-1 min-w-0 p-4 sm:p-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-6 overflow-x-clip">{children}</main>
         </div>
       </div>
+      <Feedback />
     </ThemeProvider>
   )
 }

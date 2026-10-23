@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import Logo from '@/components/ui/Logo'
+import { inputCls } from '@/components/ui/PageShell'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -72,56 +72,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="flex justify-center mb-2">
-            <Logo size={120} />
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--background)' }}>
+      <div className="bg-white rounded-[24px] card-shadow border border-gray-100/80 p-6 sm:p-8 w-full max-w-sm">
+        <div className="text-center mb-7">
+          <div className="flex justify-center mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icon-192.png" alt="" width={72} height={72} className="rounded-[20px] border border-gray-100" />
           </div>
-          {isInvite && (
-            <p className="text-sm text-gray-500 mt-2">Придумайте пароль для входа</p>
-          )}
+          <h1 className="text-xl font-bold text-gray-900">Fleet Manager</h1>
+          <p className="text-sm text-gray-500 mt-1">{isInvite ? 'Придумайте пароль для входа' : 'Управление автопарком Turo'}</p>
         </div>
 
         {isInvite ? (
           <form onSubmit={handleSetPassword} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ваше имя</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ваше имя</label>
               <input
                 type="text"
                 value={name}
                 onChange={e => setName(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputCls}
                 placeholder="Имя Фамилия"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Пароль</label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputCls}
                 placeholder="Минимум 6 символов"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Повторите пароль</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Повторите пароль</label>
               <input
                 type="password"
                 value={confirm}
                 onChange={e => setConfirm(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputCls}
               />
             </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <p className="text-red-600 text-sm">{error}</p>}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              className="btn-primary w-full h-11"
             >
               {loading ? 'Сохраняем...' : 'Создать пароль и войти'}
             </button>
@@ -129,31 +129,33 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputCls}
                 placeholder="you@example.com"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Пароль</label>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={inputCls}
               />
             </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <p className="text-red-600 text-sm">{error}</p>}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50"
+              className="btn-primary w-full h-11"
             >
               {loading ? 'Входим...' : 'Войти'}
             </button>

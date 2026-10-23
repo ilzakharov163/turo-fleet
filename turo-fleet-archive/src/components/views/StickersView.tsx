@@ -8,6 +8,7 @@ import { Plus, X, Check, Tag, History, ArrowRight } from 'lucide-react'
 import { format, parseISO, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
+import { notify, ask } from '@/lib/ui'
 
 // Наклейки меняем раз в полтора месяца
 const INTERVAL_DAYS = 45
@@ -104,7 +105,7 @@ export default function StickersView() {
       supabase.from('sticker_changes').select('*').order('changed_date', { ascending: false }),
       supabase.from('cars').select('*').order('make'),
     ])
-    if (eRes.error) alert(eRes.error.message)
+    if (eRes.error) notify(eRes.error.message, 'error')
     setEntries((eRes.data as StickerCar[]) || [])
     setChanges((cRes.data as StickerChange[]) || [])
     setCars(carsRes.data || [])
@@ -150,10 +151,10 @@ export default function StickersView() {
     if (selected.length === 0) return
     const supabase = createClient()
     const { error } = await supabase.from('sticker_cars').insert(selected.map(car_id => ({ car_id })))
-    if (error) { alert(error.message); return }
+    if (error) { return }
     if (addDate) {
       const { error: chErr } = await supabase.from('sticker_changes').insert(selected.map(car_id => ({ car_id, changed_date: addDate })))
-      if (chErr) { alert(chErr.message); return }
+      if (chErr) { return }
     }
     await log('create', 'sticker_car', selected.join(','), { cars: selected, changed_date: addDate || null })
     setShowAdd(false)
@@ -172,19 +173,19 @@ export default function StickersView() {
     // Новый номер сразу пишем в карточку авто — он подтянется во все разделы
     if (changed) {
       const { error: carErr } = await supabase.from('cars').update({ plate }).eq('id', carId)
-      if (carErr) { alert(carErr.message); return false }
+      if (carErr) { return false }
       await log('update', 'car', carId, { plate_from: oldPlate, plate_to: plate, source: 'stickers' })
     }
     const payload = { car_id: carId, changed_date: date, old_plate: oldPlate, new_plate: changed ? plate : oldPlate }
     const { data, error } = await supabase.from('sticker_changes').insert(payload).select().single()
-    if (error) { alert(error.message); return false }
+    if (error) { return false }
     if (data) await log('create', 'sticker_change', data.id, payload)
     load()
     return true
   }
 
   async function deleteChange(ch: StickerChange) {
-    if (!confirm(`Удалить запись о замене от ${fmt(ch.changed_date)}?`)) return
+    if (!await ask(`Удалить запись о замене от ${fmt(ch.changed_date)}?`, { ok: 'Удалить', danger: true })) return
     const supabase = createClient()
     await supabase.from('sticker_changes').delete().eq('id', ch.id)
     await log('delete', 'sticker_change', ch.id, { car_id: ch.car_id, changed_date: ch.changed_date })
@@ -192,7 +193,7 @@ export default function StickersView() {
   }
 
   async function removeCar(r: Row) {
-    if (!confirm(`Убрать ${carName(r.entry.car)} из раздела «Наклейки»? История замен тоже удалится.`)) return
+    if (!await ask(`Убрать ${carName(r.entry.car)} из раздела «Наклейки»?`, { detail: 'История замен тоже удалится.', ok: 'Убрать', danger: true })) return
     const supabase = createClient()
     await supabase.from('sticker_changes').delete().eq('car_id', r.entry.car_id)
     await supabase.from('sticker_cars').delete().eq('id', r.entry.id)

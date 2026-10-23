@@ -3,17 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
-import { Car as CarIcon, DollarSign, Users, TrendingUp, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench, FileText, Wallet } from 'lucide-react'
+import { Car as CarIcon, DollarSign, Users, ArrowRight, Plus, Tag, ShieldAlert, CalendarDays, Receipt, Check, ChevronRight, Wrench, FileText, Wallet } from 'lucide-react'
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addDays, differenceInCalendarDays, startOfDay, subMonths } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Car } from '@/types'
+import { calcSalary, calcEntry } from '@/lib/calc'
 
-// Как в календаре: простой < 14 дн. → $150, 14+ → $75, весь месяц → $0
-function calcSalary(inactiveDays: number, totalDays: number): number {
-  if (inactiveDays >= totalDays) return 0
-  if (inactiveDays >= 14) return 75
-  return 150
-}
 
 const STICKER_INTERVAL = 45
 const STICKER_WARN = 7
@@ -65,11 +60,7 @@ const plate = (c?: CarShort | null) => (c ? `${c.make} ${c.model} ${c.plate}` : 
 interface RevEntry { period: string; gross: number; repair: number; claim_items: { claim: number; supplement: number; pct: number }[] | null; other_items: { amount: number }[] | null }
 interface RevExp { period: string; salary1: number; salary2: number; items: { amount: number }[] | null }
 const num = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
-const entryNet = (e: RevEntry) =>
-  num(e.gross)
-  + (e.claim_items || []).reduce((s, c) => s + num(c.claim) + num(c.supplement) - num(c.supplement) * num(c.pct), 0)
-  - num(e.repair)
-  - (e.other_items || []).reduce((s, o) => s + num(o.amount), 0)
+const entryNet = (e: RevEntry) => calcEntry(e).net
 const usd = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 
 interface Profit { period: string; value: number; delta: number | null; hasGross: boolean }
@@ -79,12 +70,12 @@ export default function DashboardPage() {
   const [cars, setCars] = useState<Car[]>([])
   const [monthTotal, setMonthTotal] = useState(0)
   const [unpaidTotal, setUnpaidTotal] = useState(0)
-  const [unpaidCount, setUnpaidCount] = useState(0)
   const [salary, setSalary] = useState({ total: 0, full: 0, half: 0, zero: 0 })
   const [attention, setAttention] = useState<Attention[]>([])
   const [idle, setIdle] = useState<IdleCar[]>([])
   const [recent, setRecent] = useState<RecentExpense[]>([])
   const [profit, setProfit] = useState<Profit | null>(null)
+  const [openClaims, setOpenClaims] = useState(0)
 
   useEffect(() => {
     async function load() {
@@ -184,10 +175,10 @@ export default function DashboardPage() {
       setCars(allCars)
       setMonthTotal(total)
       setUnpaidTotal(unpaidSum)
-      setUnpaidCount(unpaid.length)
       setSalary(sal)
       setIdle(idleNow)
       setAttention(items)
+      setOpenClaims(waiting + inRepair)
       setRecent((recentRes.data || []) as unknown as RecentExpense[])
       setLoading(false)
     }
@@ -248,35 +239,35 @@ export default function DashboardPage() {
       wide: true,
     }] : []),
     {
-      label: 'Автомобили',
-      value: cars.length,
-      sub: cars.length !== listed.length ? `Снято с листинга: ${cars.length - listed.length}` : 'Всего в парке',
+      label: 'В работе',
+      value: activeCount,
+      sub: `Из ${listed.length} · ${idle.length ? `в простое ${idle.length}` : 'все работают'}`,
       href: '/cars',
       icon: CarIcon,
       tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
     {
-      label: 'Активных автомобилей',
-      value: activeCount,
-      sub: idle.length ? `В простое сейчас: ${idle.length}` : 'Все машины работают',
-      href: '/cars?tab=downtime',
-      icon: TrendingUp,
-      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
-    },
-    {
-      label: 'Расходы за месяц',
+      label: 'Расходы',
       value: `$${monthTotal.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-      sub: unpaidTotal > 0 ? `Не оплачено: $${unpaidTotal.toFixed(0)} (${unpaidCount})` : 'Всё оплачено',
+      sub: unpaidTotal > 0 ? `За ${monthName}, не оплачено $${unpaidTotal.toFixed(0)}` : `За ${monthName}, всё оплачено`,
       href: '/expenses',
       icon: DollarSign,
       tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
     {
-      label: 'Зарплата работника',
+      label: 'Зарплата',
       value: `$${salary.total}`,
       sub: `${salary.full} × $150 · ${salary.half} × $75${salary.zero ? ` · ${salary.zero} × $0` : ''}`,
       href: '/cars?tab=downtime',
       icon: Users,
+      tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
+    },
+    {
+      label: 'Клеймы',
+      value: openClaims,
+      sub: openClaims ? 'Открыто сейчас' : 'Открытых нет',
+      href: '/cars?tab=claims',
+      icon: ShieldAlert,
       tint: 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300',
     },
   ]
@@ -302,14 +293,14 @@ export default function DashboardPage() {
             <div className="flex items-start justify-between gap-2 mb-3">
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm text-gray-500 font-medium">{card.label}</p>
-                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? '—' : card.value}</p>
+                <p className={`text-2xl sm:text-3xl font-bold mt-1 tracking-tight tabular-nums ${'negative' in card && card.negative ? 'text-red-600' : 'text-gray-900'}`}>{loading ? <span className="skeleton block h-8 w-20 mt-1" /> : card.value}</p>
               </div>
               <div className={`w-10 h-10 sm:w-11 sm:h-11 flex-shrink-0 rounded-xl ${card.tint} flex items-center justify-center`}>
                 <card.icon size={20} strokeWidth={2} />
               </div>
             </div>
             <p className="text-xs text-gray-400 flex items-center justify-between gap-2">
-              <span className="truncate">{loading ? '' : card.sub}</span>
+              <span className="line-clamp-2">{loading ? '' : card.sub}</span>
               <ChevronRight size={14} className="flex-shrink-0 text-gray-300 group-hover:text-gray-500 transition-colors" />
             </p>
           </Link>
@@ -340,7 +331,7 @@ export default function DashboardPage() {
             )}
           </div>
           {loading ? (
-            <div className="px-5 pb-6 text-sm text-gray-400">Загрузка...</div>
+            <div className="px-5 pb-5 space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-10" />)}</div>
           ) : attention.length === 0 ? (
             <div className="px-5 pb-6 flex items-center gap-3">
               <span className="w-9 h-9 rounded-xl bg-green-100 text-green-600 flex items-center justify-center"><Check size={18} /></span>
@@ -381,7 +372,7 @@ export default function DashboardPage() {
             </Link>
           </div>
           {loading ? (
-            <div className="px-5 pb-6 text-sm text-gray-400">Загрузка...</div>
+            <div className="px-5 pb-5 space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-10" />)}</div>
           ) : idle.length === 0 ? (
             <div className="px-5 pb-6 text-sm text-gray-500">Все машины сегодня в работе</div>
           ) : (
@@ -414,7 +405,7 @@ export default function DashboardPage() {
           </Link>
         </div>
         {loading ? (
-          <div className="px-5 py-8 text-center text-gray-400 text-sm">Загрузка...</div>
+          <div className="p-5 space-y-2">{[0, 1, 2].map(i => <div key={i} className="skeleton h-10" />)}</div>
         ) : recent.length === 0 ? (
           <div className="px-5 py-8 text-center text-gray-400 text-sm">Расходов пока нет</div>
         ) : (

@@ -18,7 +18,7 @@ function Section({ base, tabs }: { base: string; tabs: SectionTab[] }) {
   const params = useSearchParams()
   const access = useAccess()
 
-  if (!access) return <div className="py-10 text-center text-sm text-gray-400">Загрузка…</div>
+  if (!access) return <div className="space-y-3"><div className="skeleton h-11 w-full sm:w-80" />{[0, 1, 2].map(i => <div key={i} className="skeleton h-20" />)}</div>
 
   const visible = tabs.filter(t => canAny(access, t.access))
   if (visible.length === 0) return <div className="py-10 text-center text-sm text-gray-400">Нет доступа к этому разделу</div>

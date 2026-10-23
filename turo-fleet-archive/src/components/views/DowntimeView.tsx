@@ -12,6 +12,9 @@ import {
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
+import { inputCls } from '@/components/ui/PageShell'
+import { notify, ask } from '@/lib/ui'
+import { calcSalary } from '@/lib/calc'
 
 interface PayrollRow {
   car: Car
@@ -19,11 +22,6 @@ interface PayrollRow {
   salary: number
 }
 
-function calcSalary(inactiveDays: number, totalDays: number): number {
-  if (inactiveDays >= totalDays) return 0   // весь месяц простой → $0
-  if (inactiveDays >= 14) return 75          // 14+ дней простоя → $75
-  return 150                                  // менее 14 дней → $150
-}
 
 export default function DowntimeView() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
@@ -90,7 +88,7 @@ export default function DowntimeView() {
   }
 
   async function handleDeleteBlock(b: CarBlock) {
-    if (!confirm('Удалить блокировку?')) return
+    if (!await ask('Удалить простой?', { ok: 'Удалить', danger: true })) return
     const supabase = createClient()
     await supabase.from('car_blocks').delete().eq('id', b.id)
     await log('delete', 'car_block', b.id, { car_id: b.car_id })
@@ -133,7 +131,7 @@ export default function DowntimeView() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      alert('Не удалось скопировать — попробуй ещё раз')
+      notify('Не удалось скопировать — попробуй ещё раз', 'error')
     }
   }
 
@@ -359,17 +357,17 @@ export default function DowntimeView() {
 
       {/* Block modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className="bg-white rounded-[18px] p-6 w-full max-w-sm card-shadow">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] p-5 sm:p-6 w-full max-w-sm shadow-2xl animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
             <div className="flex items-center justify-between mb-5">
-              <h3 className="font-semibold">{editBlock ? 'Редактировать блокировку' : 'Добавить блокировку'}</h3>
+              <h3 className="font-semibold">{editBlock ? 'Редактировать простой' : 'Добавить простой'}</h3>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
             </div>
             <form onSubmit={handleSaveBlock} className="space-y-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Авто</label>
                 <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))}
-                  className="w-full border border-gray-200 rounded-[10px] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20" required>
+                  className={inputCls} required>
                   <option value="">Выберите авто</option>
                   {cars.map(c => <option key={c.id} value={c.id}>{c.make} {c.model} · {c.plate}</option>)}
                 </select>
@@ -387,17 +385,17 @@ export default function DowntimeView() {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Причина</label>
                 <input value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} placeholder="необязательно"
-                  className="w-full border border-gray-200 rounded-[10px] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#4F46E5]/20" />
+                  className={inputCls} />
               </div>
               <div className="flex gap-3 pt-1">
                 {editBlock && (
                   <button type="button" onClick={() => handleDeleteBlock(editBlock)}
-                    className="flex-1 py-2 rounded-[10px] border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">
+                    className="flex-1 h-11 rounded-[10px] border border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50 transition-colors">
                     Удалить
                   </button>
                 )}
                 <button type="submit"
-                  className="flex-1 py-2 rounded-[10px] bg-[#4F46E5] text-white text-sm font-medium hover:bg-[#4338CA] transition-colors">
+                  className="btn-primary flex-1 h-11">
                   {editBlock ? 'Сохранить' : 'Добавить'}
                 </button>
               </div>

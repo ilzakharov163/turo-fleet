@@ -132,6 +132,35 @@ button:focus:not(:focus-visible), a:focus:not(:focus-visible) {
 .btn-primary:active {
   transform: translateY(0);
 }
+/* Единые кнопки: вторичная и «опасная» (удаление) */
+.btn-secondary {
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s ease;
+}
+.btn-secondary:hover { background: var(--color-gray-200); }
+.btn-danger {
+  background: #EF4444;
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s ease;
+}
+.btn-danger:hover { background: #DC2626; }
+.btn-primary:disabled, .btn-secondary:disabled, .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* Скелетон при загрузке */
+.skeleton {
+  background: linear-gradient(90deg, var(--color-gray-100) 25%, var(--color-gray-50) 50%, var(--color-gray-100) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+  border-radius: 10px;
+}
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 .animate-in {
   animation: floatIn 0.18s ease-out;

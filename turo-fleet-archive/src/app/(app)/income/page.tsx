@@ -13,6 +13,8 @@ import {
   format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isWithinInterval, addMonths, subMonths,
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
+import { ask } from '@/lib/ui'
+import { calcSalary, calcEntry } from '@/lib/calc'
 
 // ── Типы ──
 type ClaimItem = { claim: number; supplement: number; pct: number }
@@ -35,17 +37,7 @@ type Cell = string | number
 
 // ── Расчёты (та же логика, что в TuroTracker) ──
 const n = (v: unknown) => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
-function calc(e?: Entry | null) {
-  const items = e?.claim_items || []
-  const gross = n(e?.gross)
-  const claim = items.reduce((s, c) => s + n(c.claim), 0)
-  const supp = items.reduce((s, c) => s + n(c.supplement), 0)
-  const ded = items.reduce((s, c) => s + n(c.supplement) * n(c.pct), 0)
-  const repair = n(e?.repair)
-  const other = (e?.other_items || []).reduce((s, o) => s + n(o.amount), 0)
-  const net = gross + claim + supp - ded - repair - other
-  return { gross, claim, supp, ded, repair, other, net }
-}
+const calc = (e?: Entry | null) => calcEntry(e)
 type Totals = ReturnType<typeof calc>
 const zero = (): Totals => ({ gross: 0, claim: 0, supp: 0, ded: 0, repair: 0, other: 0, net: 0 })
 const add = (a: Totals, b: Totals): Totals => ({
@@ -73,11 +65,6 @@ const accActive = (a: Account, p: string) => a.active_from <= p && (!a.active_un
 const pKey = (d: Date) => format(d, 'yyyy-MM-01')
 const monthName = (p: string, f = 'LLLL yyyy') => { const t = format(parseISO(p), f, { locale: ru }); return t.charAt(0).toUpperCase() + t.slice(1) }
 
-function calcSalary(inactive: number, total: number) {
-  if (inactive >= total) return 0
-  if (inactive >= 14) return 75
-  return 150
-}
 const blockEnd = (b: Block) => (b.end_date ? parseISO(b.end_date) : new Date(9999, 0))
 
 // Цвета аккаунтов
@@ -120,10 +107,11 @@ function MoneyInput({ id, value, onChange, placeholder = '0', big = false, autoF
 
 // ── Панель машины (редактор месяца) ──
 function CarDrawer({
-  rcar, accLabel, period, entry, history, fleetOptions, onSave, onClose, onLink, onSold,
+  rcar, accLabel, period, entry, history, lifetime, fleetOptions, onSave, onClose, onLink, onSold,
 }: {
   rcar: RCar; accLabel: string; period: string; entry: Entry | null
   history: { p: string; net: number; has: boolean }[]
+  lifetime: { net: number; gross: number; months: number }
   fleetOptions: Car[]
   onSave: (e: Entry) => Promise<boolean>; onClose: () => void
   onLink: (carId: string) => void; onSold: () => void
@@ -179,6 +167,22 @@ function CarDrawer({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {/* За всё время — окупается ли машина */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+              <p className="text-[11px] text-gray-500">Итог за всё время</p>
+              <p className={`text-base font-bold tabular-nums ${lifetime.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(lifetime.net)}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+              <p className="text-[11px] text-gray-500">Gross за всё время</p>
+              <p className="text-base font-bold tabular-nums text-gray-900">{money(lifetime.gross)}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+              <p className="text-[11px] text-gray-500">В среднем за месяц</p>
+              <p className="text-base font-bold tabular-nums text-gray-900">{lifetime.months ? money(lifetime.net / lifetime.months) : '—'}</p>
+            </div>
+          </div>
+
           {/* История */}
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Итог по месяцам</p>
@@ -470,7 +474,7 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
               <span className="text-sm font-semibold tabular-nums text-gray-900">{money(sub)}</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[440px] table-fixed border-collapse text-sm">
+              <table className="w-full min-w-[440px] table-fixed border-collapse text-[15px] sm:text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="w-[80px] bg-gray-100 border-y border-r border-gray-200 px-3 py-2 text-left font-semibold">Число</th>
@@ -486,7 +490,7 @@ function PaymentsPanel({ period, items, prevCount, prevLabel, onAdd, onUpdate, o
                       <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.name} placeholder="Название" onCommit={v => onUpdate(p.id, { name: v })} /></td>
                       <td className="border-b border-r border-gray-200 p-0"><EditCell value={p.amount ? String(p.amount) : ''} numeric placeholder="0" className="text-right font-semibold tabular-nums" onCommit={v => onUpdate(p.id, { amount: round2(n(v.replace(',', '.'))) })} /></td>
                       <td className="border-b border-gray-200 text-center">
-                        <button onClick={() => { if (confirm(`Удалить платёж «${p.name || 'без названия'}»?`)) onDelete(p.id) }} className="p-1.5 text-gray-300 hover:text-red-500" aria-label="Удалить платёж"><Trash2 size={15} /></button>
+                        <button onClick={async () => { if (await ask(`Удалить платёж «${p.name || 'без названия'}»?`, { ok: 'Удалить', danger: true })) onDelete(p.id) }} className="p-1.5 text-gray-300 hover:text-red-500" aria-label="Удалить платёж"><Trash2 size={15} /></button>
                       </td>
                     </tr>
                   ))}
@@ -534,7 +538,7 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
         else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1, t) }
         else if (e.key === 'Escape') { skip.current = true; t.blur() }
       }}
-      className={`w-full min-w-0 text-right tabular-nums text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-none bg-transparent px-3 py-2.5 hover:bg-indigo-50 focus:relative focus:z-10'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
+      className={`w-full min-w-0 text-right tabular-nums text-[15px] sm:text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-none bg-transparent px-3 py-2.5 hover:bg-indigo-50 focus:relative focus:z-10'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
   )
 }
 
@@ -701,7 +705,7 @@ export default function IncomePage() {
         revenue_car_id: next.revenue_car_id, period: next.period, gross: next.gross, repair: next.repair,
         claim_items: next.claim_items, other_items: next.other_items, updated_at: new Date().toISOString(),
       }, { onConflict: 'revenue_car_id,period' })
-      if (error) { setSaveState('error'); alert(`Не сохранилось: ${error.message}`); return }
+      if (error) { setSaveState('error'); return }
       setSaveState('saved')
       log('update', 'revenue_entry', carId, { period: next.period, net: round2(calc(next).net) })
     })
@@ -718,25 +722,25 @@ export default function IncomePage() {
   async function addPayment(grp: string) {
     const sort = Math.max(0, ...payments.filter(x => x.period === period).map(x => x.sort)) + 1
     const { data, error } = await createClient().from('revenue_payments').insert({ period, grp, name: '', amount: 0, sort }).select('*').single()
-    if (error) { alert(error.message); return }
+    if (error) { return }
     setPayments(prev => [...prev, { ...(data as Payment), amount: 0 }])
   }
   async function updatePayment(id: string, patch: Partial<Payment>) {
     setPayments(prev => prev.map(x => (x.id === id ? { ...x, ...patch } : x)))
     const { error } = await createClient().from('revenue_payments').update(patch).eq('id', id)
-    if (error) { alert(`Не сохранилось: ${error.message}`); load() }
+    if (error) { load() }
   }
   async function deletePayment(id: string) {
     setPayments(prev => prev.filter(x => x.id !== id))
     const { error } = await createClient().from('revenue_payments').delete().eq('id', id)
-    if (error) { alert(error.message); load() }
+    if (error) { load() }
   }
   async function copyPrevPayments() {
     const prev = payments.filter(x => x.period === pKey(subMonths(month, 1)))
     if (!prev.length) return
     const rows = prev.map(x => ({ period, grp: x.grp, day: x.day, name: x.name, amount: x.amount, sort: x.sort, paid: false }))
     const { data, error } = await createClient().from('revenue_payments').insert(rows).select('*')
-    if (error) { alert(error.message); return }
+    if (error) { return }
     setPayments(p => [...p, ...((data as Payment[]) || []).map(x => ({ ...x, amount: n(x.amount) }))])
     await log('create', 'revenue_payments', period, { copied_from: pKey(subMonths(month, 1)), count: rows.length })
   }
@@ -746,7 +750,7 @@ export default function IncomePage() {
     const supabase = createClient()
     const payload = { revenue_car_id: e.revenue_car_id, period: e.period, gross: e.gross, repair: e.repair, claim_items: e.claim_items, other_items: e.other_items, updated_at: new Date().toISOString() }
     const { data, error } = await supabase.from('revenue_entries').upsert(payload, { onConflict: 'revenue_car_id,period' }).select('id').single()
-    if (error) { alert(error.message); return false }
+    if (error) { return false }
     setEntries(prev => [...prev.filter(x => !(x.revenue_car_id === e.revenue_car_id && x.period === e.period)), { ...e, id: data?.id }])
     await log('update', 'revenue_entry', data?.id || e.revenue_car_id, { period: e.period, net: round2(calc(e).net) })
     flash('Сохранено')
@@ -755,7 +759,7 @@ export default function IncomePage() {
   async function saveExpenses(m: MonthExp) {
     const supabase = createClient()
     const { error } = await supabase.from('revenue_month_expenses').upsert({ ...m, updated_at: new Date().toISOString() }, { onConflict: 'period' })
-    if (error) { alert(error.message); return false }
+    if (error) { return false }
     setMonthExp(prev => [...prev.filter(x => x.period !== m.period), m])
     await log('update', 'revenue_month_expenses', m.period, { total: expTotal(m) })
     return true
@@ -765,7 +769,7 @@ export default function IncomePage() {
     const supabase = createClient()
     const sort = Math.max(-1, ...rcars.filter(c => c.account === view).map(c => c.sort)) + 1
     const { data, error } = await supabase.from('revenue_cars').insert({ account: view, name: newName.trim(), car_id: newCarId || null, added_from: period, sort }).select('id').single()
-    if (error) { alert(error.message); return }
+    if (error) { return }
     await log('create', 'revenue_car', newName.trim(), { account: view, from: period })
     setAddCar(false); setNewName(''); setNewCarId('')
     await load()
@@ -773,10 +777,10 @@ export default function IncomePage() {
   }
   async function markSold(c: RCar) {
     const next = pKey(addMonths(month, 1))
-    if (!confirm(`${c.name}: убрать из списка начиная с ${monthName(next)}? Данные за прошлые месяцы сохранятся.`)) return
+    if (!await ask(`${c.name}: убрать из списка начиная с ${monthName(next)}?`, { detail: 'Данные за прошлые месяцы сохранятся.', ok: 'Убрать' })) return
     const supabase = createClient()
     const { error } = await supabase.from('revenue_cars').update({ sold_from: next }).eq('id', c.id)
-    if (error) { alert(error.message); return }
+    if (error) { return }
     await log('update', 'revenue_car', c.id, { sold_from: next })
     setDrawer(null)
     load()
@@ -876,6 +880,10 @@ export default function IncomePage() {
     const e = entryOf(drawerCar.id, p)
     return { p, net: calc(e).net, has: !!e }
   }) : []
+  const drawerLifetime = (() => {
+    const list = drawerCar ? entries.filter(e => e.revenue_car_id === drawerCar.id) : []
+    return { net: list.reduce((t, e) => t + calc(e).net, 0), gross: list.reduce((t, e) => t + n(e.gross), 0), months: list.length }
+  })()
   const linkedIds = new Set(rcars.filter(c => c.car_id && (!c.sold_from || c.sold_from > period)).map(c => c.car_id))
   const freeFleet = fleet.filter(f => !linkedIds.has(f.id)).sort((a, b) => `${a.make} ${a.model}`.localeCompare(`${b.make} ${b.model}`))
 
@@ -1022,7 +1030,7 @@ export default function IncomePage() {
               <span className="text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] border-collapse text-sm tabular-nums">
+              <table className="w-full min-w-[680px] border-collapse text-[15px] sm:text-sm tabular-nums">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="sticky left-0 z-10 bg-gray-100 border-y border-r border-gray-200 px-4 py-2.5 text-left font-semibold">Аккаунт</th>
@@ -1210,12 +1218,16 @@ export default function IncomePage() {
                   const g = n(entryOf(r.c.id, period)?.gross)
                   const prev = entryOf(r.c.id, prevP)
                   return (
-                    <div key={r.c.id} className="grid grid-cols-[1fr_auto_128px] sm:grid-cols-[1fr_auto_160px] items-center gap-3 border-t border-gray-100 px-4 sm:px-5 py-1.5">
+                    <div key={r.c.id} className="grid grid-cols-[1fr_148px] sm:grid-cols-[1fr_auto_160px] items-center gap-3 border-t border-gray-100 px-4 sm:px-5 py-2.5 sm:py-1.5">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-gray-900">{r.c.name}</p>
-                        {r.c.car && <p className="truncate text-xs text-gray-400">{r.c.car.plate}</p>}
+                        <p className="truncate text-[15px] sm:text-sm font-medium text-gray-900">{r.c.name}</p>
+                        <p className="truncate text-xs text-gray-400">
+                          {r.c.car?.plate}
+                          {/* На телефоне прошлый месяц — под названием */}
+                          {prev && n(prev.gross) ? <span className="sm:hidden">{r.c.car ? ' · ' : ''}было {money(n(prev.gross))}</span> : null}
+                        </p>
                       </div>
-                      <span className="text-xs tabular-nums text-gray-400 text-right" title="Прошлый месяц">{prev && n(prev.gross) ? <>было {money(n(prev.gross))}</> : ''}</span>
+                      <span className="hidden sm:block text-xs tabular-nums text-gray-400 text-right" title="Прошлый месяц">{prev && n(prev.gross) ? <>было {money(n(prev.gross))}</> : ''}</span>
                       <div className="flex items-center gap-1.5">
                         <NumCell grid="gross" row={idx} col={0} value={g} placeholder="0" strong boxed
                           onCommit={v => patchEntry(r.c.id, e => ({ ...e, gross: v }))} />
@@ -1246,7 +1258,7 @@ export default function IncomePage() {
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] table-fixed border-collapse text-sm">
+              <table className="w-full min-w-[900px] table-fixed border-collapse text-[15px] sm:text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
                     <th className="sticky left-0 z-20 bg-gray-100 border-b border-r border-gray-200 px-4 py-2.5 w-[190px] text-left font-semibold">Машина</th>
@@ -1327,7 +1339,7 @@ export default function IncomePage() {
       {drawerCar && (
         <CarDrawer key={`${drawerCar.id}|${period}`}
           rcar={drawerCar} accLabel={drawerAcc?.label || ''} period={period}
-          entry={entryOf(drawerCar.id, period)} history={drawerHistory}
+          entry={entryOf(drawerCar.id, period)} history={drawerHistory} lifetime={drawerLifetime}
           fleetOptions={[...(drawerCar.car_id ? fleet.filter(f => f.id === drawerCar.car_id) : []), ...freeFleet]}
           onSave={saveEntry} onClose={() => setDrawer(null)}
           onLink={id => linkCar(drawerCar, id)} onSold={() => markSold(drawerCar)} />
