@@ -9,10 +9,12 @@ import { notify } from '@/lib/ui'
 import { calcEntry, num, type RevenueEntry } from '@/lib/calc'
 import MonthPicker from '@/components/ui/MonthPicker'
 
-// Отчёт «Прибыль по машинам»: итог каждой машины (как в «Доходах») за месяц или за всё время.
-// Одна машина парка может быть в нескольких аккаунтах — объединяем по car_id; непривязанные — отдельно.
+// Отчёт «Прибыль по машинам»: итог каждой машины (как в «Доходах») за месяц или за всё время,
+// по аккаунтам: аккаунт → его машины → подытог. Если машина работала в двух аккаунтах — она в каждом со своей частью.
 
-interface Acc { key: string; label: string; active_from: string; active_until: string | null }
+interface Group { key: string; label: string; rows: Row[]; net: number; gross: number; claims: number; costs: number; payments: number }
+
+interface Acc { key: string; label: string; sort: number; active_from: string; active_until: string | null }
 interface RCar { id: string; account: string; name: string; car_id: string | null; added_from: string; sold_from: string | null; car: { make: string; model: string; plate: string; removed_from: string | null } | null }
 interface Entry extends RevenueEntry { revenue_car_id: string; period: string }
 
@@ -20,6 +22,7 @@ interface Row {
   key: string
   name: string
   plate: string
+  account: string           // ключ аккаунта
   accounts: string[]
   months: string[]          // месяцы с данными
   gross: number
@@ -47,7 +50,7 @@ export default function CarProfitView() {
   useEffect(() => {
     const supabase = createClient()
     Promise.all([
-      supabase.from('revenue_accounts').select('key, label, active_from, active_until'),
+      supabase.from('revenue_accounts').select('key, label, sort, active_from, active_until'),
       supabase.from('revenue_cars').select('id, account, name, car_id, added_from, sold_from, car:cars(make, model, plate, removed_from)'),
       supabase.from('revenue_entries').select('revenue_car_id, period, gross, repair, claim_items, other_items, payment'),
     ]).then(([a, c, e]) => {
@@ -71,9 +74,10 @@ export default function CarProfitView() {
       // В месячном режиме показываем и машины без данных, если они в этом месяце числились в работающем аккаунте
       const visible = mode === 'month' && rc.added_from <= period && (!rc.sold_from || period < rc.sold_from) && accActive(rc.account, period)
       if (!own.length && !visible) continue
-      const key = rc.car_id || rc.id
+      const key = `${rc.account}|${rc.car_id || rc.id}`
       const row = byKey.get(key) || {
         key,
+        account: rc.account,
         name: rc.car ? `${rc.car.make} ${rc.car.model}` : rc.name,
         plate: rc.car?.plate || '',
         accounts: [], months: [], gross: 0, claims: 0, costs: 0, payments: 0, net: 0, gone: true,
@@ -93,8 +97,19 @@ export default function CarProfitView() {
       if (stillHere) row.gone = false
       byKey.set(key, row)
     }
-    return [...byKey.values()].map(r => ({ ...r, months: r.months.sort() })).sort((a, b) => b.net - a.net || a.name.localeCompare(b.name, 'ru'))
+    return [...byKey.values()].map(r => ({ ...r, months: r.months.sort() }))
   }, [accs, rcars, entries, mode, period, curMonth])
+
+  // По аккаунтам (в порядке аккаунтов), внутри — от самой прибыльной машины
+  const groups: Group[] = useMemo(() => {
+    const sum = (rs: Row[], f: (r: Row) => number) => rs.reduce((s, r) => s + f(r), 0)
+    return [...new Set(rows.map(r => r.account))]
+      .sort((a, b) => (accs.find(x => x.key === a)?.sort ?? 99) - (accs.find(x => x.key === b)?.sort ?? 99))
+      .map(k => {
+        const rs = rows.filter(r => r.account === k).sort((a, b) => b.net - a.net || a.name.localeCompare(b.name, 'ru'))
+        return { key: k, label: accs.find(x => x.key === k)?.label || k, rows: rs, net: sum(rs, r => r.net), gross: sum(rs, r => r.gross), claims: sum(rs, r => r.claims), costs: sum(rs, r => r.costs), payments: sum(rs, r => r.payments) }
+      })
+  }, [rows, accs])
 
   const total = rows.reduce((s, r) => s + r.net, 0)
   const allMonths = [...new Set(rows.flatMap(r => r.months))].sort()
@@ -102,31 +117,35 @@ export default function CarProfitView() {
     ? `Прибыль по машинам за всё время${allMonths.length ? ` (${mName(allMonths[0], 'LLLL yyyy')} — ${mName(allMonths[allMonths.length - 1], 'LLLL yyyy')}, ${allMonths.length} ${monthsWord(allMonths.length)})` : ''}`
     : `Прибыль по машинам за ${mName(period)}`
 
+  const carLine = (r: Row, i: number) => {
+    const extra = mode === 'all' ? ` · ${r.months.length} ${monthsWord(r.months.length)} · в среднем ${usd(r.months.length ? r.net / r.months.length : 0)}/мес` : ''
+    return `${i + 1}. ${r.name}${r.plate ? ` ${r.plate}` : ''} — ${usd(r.net)}${extra}${r.gone ? ' (уже нет)' : ''}`
+  }
   const text = [
     `🚗 ${title}`,
-    '',
-    ...rows.map((r, i) => {
-      const extra = mode === 'all' ? ` · ${r.months.length} ${monthsWord(r.months.length)} · в среднем ${usd(r.months.length ? r.net / r.months.length : 0)}/мес` : ''
-      return `${i + 1}. ${r.name}${r.plate ? ` ${r.plate}` : ''} — ${usd(r.net)}${extra}${r.gone ? ' (уже нет)' : ''}`
-    }),
+    ...groups.flatMap(g => ['', `👤 ${g.label} — ${usd(g.net)} (машин: ${g.rows.length})`, ...g.rows.map(carLine)]),
     '',
     `Итого: ${usd(total)} · машин: ${rows.length}`,
   ].join('\n')
 
   function csv(): Cell[][] {
-    const head: Cell[] = ['№', 'Машина', 'Номер', 'Аккаунт', ...(mode === 'all' ? ['Месяцев', 'С', 'По'] : []), 'Gross', 'Клеймы (после вычета)', 'Ремонт и прочее', 'Платежи', 'Итог', ...(mode === 'all' ? ['В среднем за месяц'] : []), 'Статус']
-    return [
-      [title], [],
-      head,
-      ...rows.map((r, i) => [
-        i + 1, r.name, r.plate, r.accounts.join(', '),
-        ...(mode === 'all' ? [r.months.length, r.months[0] ? mName(r.months[0], 'LLL yyyy') : '', r.months.length ? mName(r.months[r.months.length - 1], 'LLL yyyy') : ''] : []),
+    const all = mode === 'all'
+    const head: Cell[] = ['№', 'Машина', 'Номер', ...(all ? ['Месяцев', 'С', 'По'] : []), 'Gross', 'Клеймы (после вычета)', 'Ремонт и прочее', 'Платежи', 'Итог', ...(all ? ['В среднем за месяц'] : []), 'Статус']
+    const pad = all ? ['', '', ''] : []
+    const out: Cell[][] = [[title], []]
+    for (const g of groups) {
+      out.push([`Аккаунт: ${g.label}`], head)
+      g.rows.forEach((r, i) => out.push([
+        i + 1, r.name, r.plate,
+        ...(all ? [r.months.length, r.months[0] ? mName(r.months[0], 'LLL yyyy') : '', r.months.length ? mName(r.months[r.months.length - 1], 'LLL yyyy') : ''] : []),
         round(r.gross), round(r.claims), round(-r.costs), round(-r.payments), round(r.net),
-        ...(mode === 'all' ? [round(r.months.length ? r.net / r.months.length : 0)] : []),
+        ...(all ? [round(r.months.length ? r.net / r.months.length : 0)] : []),
         r.gone ? 'уже нет' : 'в работе',
-      ] as Cell[]),
-      [], ['Итого', '', '', '', ...(mode === 'all' ? ['', '', ''] : []), round(rows.reduce((s, r) => s + r.gross, 0)), round(rows.reduce((s, r) => s + r.claims, 0)), round(-rows.reduce((s, r) => s + r.costs, 0)), round(-rows.reduce((s, r) => s + r.payments, 0)), round(total)],
-    ]
+      ]))
+      out.push([`Итого ${g.label}`, `машин: ${g.rows.length}`, '', ...pad, round(g.gross), round(g.claims), round(-g.costs), round(-g.payments), round(g.net)], [])
+    }
+    out.push(['Итого по всем аккаунтам', `машин: ${rows.length}`, '', ...pad, round(groups.reduce((s, g) => s + g.gross, 0)), round(groups.reduce((s, g) => s + g.claims, 0)), round(-groups.reduce((s, g) => s + g.costs, 0)), round(-groups.reduce((s, g) => s + g.payments, 0)), round(total)])
+    return out
   }
 
   async function share() {
@@ -193,28 +212,38 @@ export default function CarProfitView() {
         ) : (
           <>
             {/* Телефон — карточки */}
-            <ul className="sm:hidden divide-y divide-gray-100">
-              {rows.map((r, i) => (
-                <li key={r.key} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate"><span className="text-gray-400 font-normal tabular-nums">{i + 1}.</span> {r.name}</p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {r.plate && <span className="font-mono font-semibold text-gray-600">{r.plate}</span>}{r.plate ? ' · ' : ''}{r.accounts.join(', ')}
-                        {r.gone && <span className="text-orange-500"> · уже нет</span>}
-                      </p>
-                    </div>
-                    <span className={`text-base font-bold tabular-nums whitespace-nowrap ${r.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{usd(r.net)}</span>
+            <div className="sm:hidden">
+              {groups.map(g => (
+                <div key={g.key}>
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 border-y border-gray-100">
+                    <span className="text-sm font-semibold text-gray-900">{g.label} <span className="font-normal text-gray-400">· {g.rows.length}</span></span>
+                    <span className={`text-sm font-bold tabular-nums ${g.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{usd(g.net)}</span>
                   </div>
-                  {r.payments > 0 && <p className="text-xs text-gray-400 mt-1">платежи −{usd(r.payments)}</p>}
-                  {mode === 'all' && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      {r.months.length} {monthsWord(r.months.length)}{r.months.length ? ` (${mName(r.months[0], 'LLL')} — ${mName(r.months[r.months.length - 1], 'LLL yyyy')})` : ''} · в среднем {usd(r.months.length ? r.net / r.months.length : 0)}/мес
-                    </p>
-                  )}
-                </li>
+                  <ul className="divide-y divide-gray-100">
+                    {g.rows.map((r, i) => (
+                      <li key={r.key} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate"><span className="text-gray-400 font-normal tabular-nums">{i + 1}.</span> {r.name}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {r.plate && <span className="font-mono font-semibold text-gray-600">{r.plate}</span>}
+                              {r.gone && <span className="text-orange-500">{r.plate ? ' · ' : ''}уже нет</span>}
+                            </p>
+                          </div>
+                          <span className={`text-base font-bold tabular-nums whitespace-nowrap ${r.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{usd(r.net)}</span>
+                        </div>
+                        {r.payments > 0 && <p className="text-xs text-gray-400 mt-1">платежи −{usd(r.payments)}</p>}
+                        {mode === 'all' && (
+                          <p className="text-xs text-gray-400 mt-1">
+                            {r.months.length} {monthsWord(r.months.length)}{r.months.length ? ` (${mName(r.months[0], 'LLL')} — ${mName(r.months[r.months.length - 1], 'LLL yyyy')})` : ''} · в среднем {usd(r.months.length ? r.net / r.months.length : 0)}/мес
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
 
             {/* Компьютер — таблица */}
             <div className="hidden sm:block overflow-x-auto">
@@ -223,7 +252,6 @@ export default function CarProfitView() {
                   <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
                     <th className="px-4 py-3 font-medium w-10">№</th>
                     <th className="px-4 py-3 font-medium">Машина</th>
-                    <th className="px-4 py-3 font-medium">Аккаунт</th>
                     {mode === 'all' && <th className="px-4 py-3 font-medium">Месяцев</th>}
                     <th className="px-4 py-3 font-medium text-right">Gross</th>
                     <th className="px-4 py-3 font-medium text-right">Клеймы</th>
@@ -233,29 +261,39 @@ export default function CarProfitView() {
                     {mode === 'all' && <th className="px-4 py-3 font-medium text-right">В среднем / мес</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {rows.map((r, i) => (
-                    <tr key={r.key} className={r.gone ? 'text-gray-400' : ''}>
-                      <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`font-medium ${r.gone ? '' : 'text-gray-900'}`}>{r.name}</span>
-                        {r.plate && <span className="ml-1.5 font-mono text-xs font-semibold text-gray-500">{r.plate}</span>}
-                        {r.gone && <span className="ml-2 text-xs text-orange-500">уже нет</span>}
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-500">{r.accounts.join(', ')}</td>
-                      {mode === 'all' && <td className="px-4 py-2.5 text-gray-500">{r.months.length}{r.months.length ? <span className="text-xs text-gray-400"> · {mName(r.months[0], 'LLL')}–{mName(r.months[r.months.length - 1], 'LLL')}</span> : null}</td>}
-                      <td className="px-4 py-2.5 text-right">{r.gross ? usd(r.gross) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right">{r.claims ? usd(r.claims) : '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-500">{r.costs ? `−${usd(r.costs)}` : '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-500">{r.payments ? `−${usd(r.payments)}` : '—'}</td>
-                      <td className={`px-4 py-2.5 text-right font-semibold ${r.net < 0 ? 'text-red-600' : r.gone ? '' : 'text-gray-900'}`}>{usd(r.net)}</td>
-                      {mode === 'all' && <td className="px-4 py-2.5 text-right text-gray-500">{usd(r.months.length ? r.net / r.months.length : 0)}</td>}
+                {groups.map(g => (
+                  <tbody key={g.key} className="divide-y divide-gray-100 border-t border-gray-200">
+                    <tr className="bg-indigo-50/50">
+                      <td colSpan={mode === 'all' ? 3 : 2} className="px-4 py-2.5 font-semibold text-gray-900">{g.label} <span className="font-normal text-gray-400">· машин: {g.rows.length}</span></td>
+                      <td className="px-4 py-2.5 text-right font-medium text-gray-700">{g.gross ? usd(g.gross) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-gray-700">{g.claims ? usd(g.claims) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500">{g.costs ? `−${usd(g.costs)}` : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-500">{g.payments ? `−${usd(g.payments)}` : '—'}</td>
+                      <td className={`px-4 py-2.5 text-right font-bold ${g.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{usd(g.net)}</td>
+                      {mode === 'all' && <td />}
                     </tr>
-                  ))}
-                </tbody>
+                    {g.rows.map((r, i) => (
+                      <tr key={r.key} className={r.gone ? 'text-gray-400' : ''}>
+                        <td className="px-4 py-2.5 text-gray-400">{i + 1}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`font-medium ${r.gone ? '' : 'text-gray-900'}`}>{r.name}</span>
+                          {r.plate && <span className="ml-1.5 font-mono text-xs font-semibold text-gray-500">{r.plate}</span>}
+                          {r.gone && <span className="ml-2 text-xs text-orange-500">уже нет</span>}
+                        </td>
+                        {mode === 'all' && <td className="px-4 py-2.5 text-gray-500">{r.months.length}{r.months.length ? <span className="text-xs text-gray-400"> · {mName(r.months[0], 'LLL')}–{mName(r.months[r.months.length - 1], 'LLL')}</span> : null}</td>}
+                        <td className="px-4 py-2.5 text-right">{r.gross ? usd(r.gross) : '—'}</td>
+                        <td className="px-4 py-2.5 text-right">{r.claims ? usd(r.claims) : '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-500">{r.costs ? `−${usd(r.costs)}` : '—'}</td>
+                        <td className="px-4 py-2.5 text-right text-gray-500">{r.payments ? `−${usd(r.payments)}` : '—'}</td>
+                        <td className={`px-4 py-2.5 text-right font-semibold ${r.net < 0 ? 'text-red-600' : r.gone ? '' : 'text-gray-900'}`}>{usd(r.net)}</td>
+                        {mode === 'all' && <td className="px-4 py-2.5 text-right text-gray-500">{usd(r.months.length ? r.net / r.months.length : 0)}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
                 <tfoot>
                   <tr className="bg-gray-50 font-semibold text-gray-900">
-                    <td className="px-4 py-3" colSpan={mode === 'all' ? 4 : 3}>Итого · машин: {rows.length}</td>
+                    <td className="px-4 py-3" colSpan={mode === 'all' ? 3 : 2}>Итого по всем аккаунтам · машин: {rows.length}</td>
                     <td className="px-4 py-3 text-right">{usd(rows.reduce((s, r) => s + r.gross, 0))}</td>
                     <td className="px-4 py-3 text-right">{usd(rows.reduce((s, r) => s + r.claims, 0))}</td>
                     <td className="px-4 py-3 text-right text-gray-500">−{usd(rows.reduce((s, r) => s + r.costs, 0))}</td>
