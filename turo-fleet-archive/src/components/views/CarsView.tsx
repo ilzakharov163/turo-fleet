@@ -267,7 +267,7 @@ export default function CarsView() {
                       {leavingLabel(car) && <span className="inline-block mt-1 ml-1.5 bg-orange-50 text-orange-600 px-2 py-0.5 rounded-lg text-xs font-semibold">{leavingLabel(car)}</span>}
                     </div>
                     <button
-                      onClick={() => setInactiveModal(car)}
+                      onClick={() => (idleOf(car.id) ? setInactiveModal(car) : setUnlistCar(car))}
                       className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold ${
                         !idleOf(car.id) ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'
                       }`}
@@ -331,7 +331,7 @@ export default function CarsView() {
                   </td>
                   <td className="px-6 py-4">
                     <button
-                      onClick={() => setInactiveModal(car)}
+                      onClick={() => (idleOf(car.id) ? setInactiveModal(car) : setUnlistCar(car))}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                         !idleOf(car.id)
                           ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'

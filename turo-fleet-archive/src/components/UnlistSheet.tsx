@@ -10,7 +10,7 @@ import { Modal, FormField, inputCls, ModalActions, CancelButton } from '@/compon
 import DatePicker from '@/components/ui/DatePicker'
 import { Car } from '@/types'
 
-// «Снять с листинга»: машина уходит в простой с выбранной даты.
+// «В простой / снять с листинга» (кнопка статуса «В работе» и «Снять с листинга»): машина уходит в простой с выбранной даты.
 // Причина «Клейм» — сразу создаётся клейм (номер обязателен, описание по желанию), машина в простое «Клейм №…».
 // «Другая причина» — просто простой с этой причиной.
 export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
@@ -21,6 +21,7 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
 }) {
   const [reason, setReason] = useState<'claim' | 'other'>('claim')
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [endDate, setEndDate] = useState('')   // необязательно: до какого числа
   const [claimNumber, setClaimNumber] = useState('')
   const [description, setDescription] = useState('')
   const [otherReason, setOtherReason] = useState('')
@@ -50,20 +51,20 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
 
     if (!alreadyIdle) {
       const blockReason = reason === 'claim' ? `Клейм № ${num}${desc ? ` — ${desc}` : ''}` : otherReason.trim()
-      const { data, error } = await supabase.from('car_blocks').insert({ car_id: car.id, start_date: date, end_date: null, reason: blockReason }).select('id').single()
+      const { data, error } = await supabase.from('car_blocks').insert({ car_id: car.id, start_date: date, end_date: endDate || null, reason: blockReason }).select('id').single()
       if (error) { setBusy(false); return }
-      await log('create', 'car_block', data?.id || '', { car_id: car.id, start_date: date, reason: blockReason })
+      await log('create', 'car_block', data?.id || '', { car_id: car.id, start_date: date, end_date: endDate || null, reason: blockReason })
     }
 
     setBusy(false)
-    notify(reason === 'claim' ? `Снята с листинга, клейм № ${num} создан` : 'Снята с листинга', 'success')
+    notify(reason === 'claim' ? `В простое, клейм № ${num} создан` : 'Машина в простое', 'success')
     onDone()
   }
 
   const choice = (on: boolean) => `flex-1 flex items-center justify-center gap-2 h-12 rounded-xl border text-sm font-semibold transition-colors ${on ? 'border-[#4F46E5] bg-indigo-50 text-[#4F46E5] dark:text-indigo-300' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`
 
   return (
-    <Modal title="Снять с листинга" onClose={onClose}>
+    <Modal title="В простой (снять с листинга)" onClose={onClose}>
       <form onSubmit={save} className="space-y-4">
         <p className="text-sm text-gray-500 -mt-1">{car.make} {car.model} <span className="font-mono font-semibold text-gray-700">{car.plate}</span></p>
 
@@ -72,9 +73,14 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
           <button type="button" onClick={() => setReason('other')} className={choice(reason === 'other')}><PauseCircle size={17} /> Другая причина</button>
         </div>
 
-        <FormField label="С какого числа">
-          <DatePicker value={date} onChange={setDate} />
-        </FormField>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField label="С какого числа">
+            <DatePicker value={date} onChange={setDate} />
+          </FormField>
+          <FormField label="По (необязательно)">
+            <DatePicker value={endDate} onChange={setEndDate} />
+          </FormField>
+        </div>
 
         {reason === 'claim' ? (
           <>
@@ -84,7 +90,7 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
             <FormField label="Что случилось (коротко)">
               <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Например, бампер и фара после ДТП" className={inputCls} />
             </FormField>
-            <p className="text-xs text-gray-500">Клейм сразу появится в «Авто → Клеймы» со статусом «Ожидает ремонта», а машина будет в простое с этой даты.</p>
+            <p className="text-xs text-gray-500">Клейм сразу появится в «Авто → Клеймы» со статусом «Ожидает ремонта», а машина будет в простое с этой даты. «По» обычно оставьте пустым — вернёте в работу, когда починят.</p>
           </>
         ) : (
           <FormField label="Причина *">
@@ -97,7 +103,7 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
 
         <ModalActions>
           <CancelButton onClick={onClose} />
-          <button type="submit" disabled={!canSave || busy || (alreadyIdle && reason === 'other')} className="btn-primary flex-1 h-11">{busy ? 'Сохраняю…' : 'Снять с листинга'}</button>
+          <button type="submit" disabled={!canSave || busy || (alreadyIdle && reason === 'other')} className="btn-primary flex-1 h-11">{busy ? 'Сохраняю…' : 'В простой'}</button>
         </ModalActions>
       </form>
     </Modal>
