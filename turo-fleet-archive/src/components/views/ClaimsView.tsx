@@ -4,12 +4,13 @@ import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
-import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote } from 'lucide-react'
+import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote, Search } from 'lucide-react'
 import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { ask } from '@/lib/ui'
 import { inFleet } from '@/lib/calc'
+import { inputCls } from '@/components/ui/PageShell'
 
 interface Claim {
   id: string
@@ -21,6 +22,8 @@ interface Claim {
   supplement_paid: boolean
   still_listed: boolean
   notes: string | null
+  claim_number: string | null
+  description: string | null
   created_at: string
   car?: Car
 }
@@ -40,6 +43,8 @@ const emptyForm = {
   supplement_paid: false,
   still_listed: true,
   notes: '',
+  claim_number: '',
+  description: '',
 }
 
 function today() {
@@ -70,6 +75,8 @@ export default function ClaimsView() {
   const [form, setForm] = useState(emptyForm)
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [openNotes, setOpenNotes] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [formError, setFormError] = useState('')
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -87,6 +94,7 @@ export default function ClaimsView() {
   function openAdd() {
     setEditClaim(null)
     setForm({ ...emptyForm, opened_date: today() })
+    setFormError('')
     setShowModal(true)
   }
 
@@ -101,14 +109,21 @@ export default function ClaimsView() {
       supplement_paid: c.supplement_paid,
       still_listed: c.still_listed,
       notes: c.notes || '',
+      claim_number: c.claim_number || '',
+      description: c.description || '',
     })
+    setFormError('')
     setShowModal(true)
   }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
+    // Номер клейма обязателен для новых; у старых клеймов без номера его можно дописать позже
+    if (!editClaim && !form.claim_number.trim()) { setFormError('Укажите номер клейма'); return }
     const supabase = createClient()
     const payload = {
+      claim_number: form.claim_number.trim() || null,
+      description: form.description.trim() || null,
       car_id: form.car_id || null,
       status: form.status,
       opened_date: form.opened_date || null,
@@ -158,6 +173,9 @@ export default function ClaimsView() {
     load()
   }
 
+  const q = query.trim().toLowerCase()
+  const matches = (c: Claim) => !q || [c.claim_number, c.description, c.notes, c.car ? `${c.car.make} ${c.car.model} ${c.car.plate}` : ''].some(v => (v || '').toLowerCase().includes(q))
+  const found = q ? claims.filter(matches).sort((a, b) => (b.opened_date || b.created_at).localeCompare(a.opened_date || a.created_at)) : []
   const waiting = claims.filter(c => c.status === 'waiting')
   const inRepair = claims.filter(c => c.status === 'in_repair')
   const done = claims
@@ -178,6 +196,12 @@ export default function ClaimsView() {
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
           <div className="flex-1 min-w-[180px]">
             <p className="text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+            {(c.claim_number || c.description) && (
+              <p className="text-xs text-gray-600 truncate">
+                {c.claim_number && <span className="font-mono font-semibold text-[#4F46E5] dark:text-indigo-300">№ {c.claim_number}</span>}
+                {c.claim_number && c.description ? ' · ' : ''}{c.description}
+              </p>
+            )}
             <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
               {c.opened_date ? `открыт ${short(c.opened_date)}` : 'дата не указана'}
               {c.still_listed && <span className="text-purple-500">· листинг активен</span>}
@@ -250,7 +274,35 @@ export default function ClaimsView() {
         </button>
       </div>
 
-      {!loading && (
+      {/* Поиск по номеру клейма, машине, описанию */}
+      <div className="relative">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск: номер клейма, машина, описание…"
+          className="w-full h-11 pl-9 pr-9 text-base sm:text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
+        {query && <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" aria-label="Очистить"><X size={15} /></button>}
+      </div>
+
+      {!loading && q && (
+        <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 text-sm font-bold text-gray-900">Найдено: {found.length}</div>
+          {found.length === 0 ? <p className="px-4 py-4 text-sm text-gray-400">Ничего не найдено</p> : (
+            <div className="divide-y divide-gray-100">
+              {found.map(c => c.status === 'done' ? (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <Check size={14} className="text-green-500 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+                    <p className="text-xs text-gray-500 truncate">{c.claim_number && <span className="font-mono font-semibold">№ {c.claim_number} · </span>}завершён {c.completed_date ? short(c.completed_date) : '—'}{c.description ? ` · ${c.description}` : ''}</p>
+                  </div>
+                  <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
+                </div>
+              ) : <ActiveRow key={c.id} c={c} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && !q && (
         <>
           <Section title="Ожидают ремонта" dot="bg-yellow-400" items={waiting} empty="Нет машин в очереди" />
           <Section title="В ремонте" dot="bg-blue-500" items={inRepair} empty="Сейчас в ремонте ничего нет" />
@@ -277,7 +329,7 @@ export default function ClaimsView() {
                 {done.map(c => (
                   <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                     <Check size={14} className="text-green-500 flex-shrink-0" />
-                    <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+                    <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} />{c.claim_number && <span className="ml-1.5 font-mono text-xs text-gray-400">№ {c.claim_number}</span>}</p>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
                       завершён {c.completed_date ? short(c.completed_date) : '—'}
                     </span>
@@ -291,16 +343,27 @@ export default function ClaimsView() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-lg max-h-[92vh] overflow-y-auto animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-semibold">{editClaim ? 'Редактировать клейм' : 'Новый клейм'}</h2>
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Номер клейма{!editClaim && ' *'}</label>
+                  <input value={form.claim_number} onChange={e => { setForm(f => ({ ...f, claim_number: e.target.value })); setFormError('') }} placeholder="Например, 12345678" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Что случилось</label>
+                  <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Коротко: бампер, фара…" className={inputCls} />
+                </div>
+              </div>
+              {formError && <p className="text-sm text-red-600 -mt-2">{formError}</p>}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
-                <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} className={inputCls}>
                   <option value="">Выберите авто</option>
                   {cars.filter(c => inFleet(c, format(new Date(), 'yyyy-MM-01'))).map(c => (<option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>))}
                 </select>
@@ -350,14 +413,14 @@ export default function ClaimsView() {
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Заметки</label>
-                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Описание повреждений, детали клейма..." rows={3} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Описание повреждений, детали клейма..." rows={3} className={`${inputCls} resize-none`} />
               </div>
               <div className="flex gap-3 pt-2">
                 {editClaim && (
                   <button type="button" onClick={() => handleDelete(editClaim)} className="px-4 py-2 rounded-lg border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">Удалить</button>
                 )}
                 <button type="submit" className="flex-1 btn-primary h-11">Сохранить</button>
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 btn-secondary h-11">Отмена</button>
               </div>
             </form>
           </div>

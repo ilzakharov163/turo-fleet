@@ -19,6 +19,8 @@ interface Block {
 
 interface Claim {
   id: string
+  claim_number?: string | null
+  description?: string | null
   car_id: string | null
   status: 'waiting' | 'in_repair' | 'done'
   opened_date: string | null
@@ -173,10 +175,12 @@ export default function ReportsView() {
     return dd ? isSameMonth(parseISO(dd), month) : false
   })
   const claimLine = (c: Claim, done = false) => {
-    if (done) return `• ${carName(c.car)} — завершён ${c.completed_date ? d(c.completed_date) : '—'}`
+    const no = c.claim_number ? ` · № ${c.claim_number}` : ''
+    if (done) return `• ${carName(c.car)}${no} — завершён ${c.completed_date ? d(c.completed_date) : '—'}`
     const yn = (v: boolean) => (v ? 'да' : 'нет')
     return [
-      `• ${carName(c.car)}${c.opened_date ? ` (открыт ${d(c.opened_date)})` : ''}`,
+      `• ${carName(c.car)}${no}${c.opened_date ? ` (открыт ${d(c.opened_date)})` : ''}`,
+      ...(c.description ? [`    ${c.description}`] : []),
       `    Initial получен: ${yn(c.initial_payment_received)}`,
       `    Supplement получен: ${yn(c.supplement_paid)}`,
     ].join('\n')
@@ -195,9 +199,9 @@ export default function ReportsView() {
   ].join('\n')
   const statusRu: Record<Claim['status'], string> = { waiting: 'Ожидает ремонта', in_repair: 'В ремонте', done: 'Завершён' }
   const claimsCsv: Cell[][] = [
-    ['Авто', 'Номер', 'Статус', 'Открыт', 'Завершён', 'Initial payment', 'Supplement', 'Заметки'],
+    ['Авто', 'Номер', 'Клейм №', 'Что случилось', 'Статус', 'Открыт', 'Завершён', 'Initial payment', 'Supplement', 'Заметки'],
     ...[...waiting, ...inRepair, ...doneInMonth].map(c => [
-      c.car ? `${c.car.make} ${c.car.model}` : '—', c.car?.plate || '', statusRu[c.status],
+      c.car ? `${c.car.make} ${c.car.model}` : '—', c.car?.plate || '', c.claim_number || '', c.description || '', statusRu[c.status],
       c.opened_date || '', c.completed_date || '', c.initial_payment_received ? 'да' : 'нет', c.supplement_paid ? 'да' : 'нет', c.notes || '',
     ]),
   ]

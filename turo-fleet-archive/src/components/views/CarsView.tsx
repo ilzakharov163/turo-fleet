@@ -8,6 +8,7 @@ import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye, RotateC
 import { Card, Modal, FormField, inputCls, ModalActions, SaveButton, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
 import CarCard from '@/components/CarCard'
+import UnlistSheet from '@/components/UnlistSheet'
 import { restoreCar } from '@/lib/fleet'
 import { canAny, useAccess } from '@/lib/access'
 import { ask, notify } from '@/lib/ui'
@@ -37,6 +38,7 @@ export default function CarsView() {
   const rowRefs = useRef<Record<string, HTMLElement | null>>({})
   const [carBlocks, setCarBlocks] = useState<CarBlock[]>([])
   const [openCar, setOpenCar] = useState<Car | null>(null)
+  const [unlistCar, setUnlistCar] = useState<Car | null>(null)
   const access = useAccess()
 
   async function load() {
@@ -147,6 +149,12 @@ export default function CarsView() {
     if (!await ask(`Вернуть ${car.make} ${car.model} ${car.plate} в парк?`, { detail: 'Машина снова появится в списках, зарплате и в «Доходах».', ok: 'Вернуть' })) return
     const ok = await restoreCar({ carId: car.id, from: car.removed_from || null, canFleet: true, canIncome: canAny(access, ['/income']) })
     if (ok) { notify('Машина возвращена', 'success'); load() }
+  }
+
+  // «Снять с листинга» — окно с причиной (клейм / другая); «Вернуть в листинг» — для старых снятых машин
+  function onListingClick(car: Car) {
+    if (car.delisted) handleToggleDelisted(car)
+    else setUnlistCar(car)
   }
 
   async function handleToggleDelisted(car: Car) {
@@ -281,7 +289,7 @@ export default function CarsView() {
                   )}
                   <div className="mt-2.5 flex items-center gap-1.5">
                     <button
-                      onClick={() => handleToggleDelisted(car)}
+                      onClick={() => onListingClick(car)}
                       className={`flex-1 h-9 rounded-xl px-2.5 flex items-center justify-center gap-1.5 text-xs font-medium ${car.delisted ? 'bg-orange-50 text-orange-500' : 'bg-gray-50 text-gray-500'}`}
                     >
                       {car.delisted ? <><Eye size={13} /> Вернуть в листинг</> : <><EyeOff size={13} /> Снять с листинга</>}
@@ -350,7 +358,7 @@ export default function CarsView() {
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => handleToggleDelisted(car)}
+                        onClick={() => onListingClick(car)}
                         title={car.delisted ? 'Вернуть в листинг' : 'Снять с листинга'}
                         className={`h-8 rounded-xl px-2.5 flex items-center gap-1.5 text-xs font-medium transition-colors ${car.delisted ? 'bg-orange-50 text-orange-500 hover:bg-orange-100' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600'}`}
                       >
@@ -481,6 +489,7 @@ export default function CarsView() {
           </form>
         </Modal>
       )}
+      {unlistCar && <UnlistSheet car={unlistCar} alreadyIdle={!!idleOf(unlistCar.id)} onClose={() => setUnlistCar(null)} onDone={() => { setUnlistCar(null); load() }} />}
       {openCar && <CarCard car={openCar} onClose={() => setOpenCar(null)} onChanged={() => { setOpenCar(null); load() }} />}
     </div>
   )

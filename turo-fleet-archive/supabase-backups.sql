@@ -58,3 +58,8 @@ alter table public.cars add column if not exists removed_from date;
 
 -- 23.10.2026, миграция revenue_entries_payment: платёж за машину в месяц (null — не задан, 0 — нет)
 alter table public.revenue_entries add column if not exists payment numeric;
+
+-- 24.10.2026, миграция claims_number_description: номер клейма (уникальный без учёта регистра) и короткое описание
+alter table public.claims add column if not exists claim_number text;
+alter table public.claims add column if not exists description text;
+create unique index if not exists claims_claim_number_uniq on public.claims (lower(trim(claim_number))) where claim_number is not null and trim(claim_number) <> '';
