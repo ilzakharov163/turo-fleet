@@ -28,6 +28,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // Приложение не масштабируется пальцами — иначе после приближения страница «съезжает»
+  maximumScale: 1,
+  userScalable: false,
   // На iPhone страница доходит до краёв, отступы под «чёлку» и полоску — через env(safe-area-inset-*)
   viewportFit: 'cover',
   themeColor: [

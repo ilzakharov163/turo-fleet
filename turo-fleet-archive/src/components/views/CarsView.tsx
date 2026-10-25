@@ -32,6 +32,7 @@ export default function CarsView() {
   const [editBlock, setEditBlock] = useState<CarBlock | null>(null)
   const [editBlockForm, setEditBlockForm] = useState({ start_date: '', end_date: '', reason: '' })
   const [searchQuery, setSearchQuery] = useState('')
+  const [filter, setFilter] = useState<'all' | 'work' | 'idle'>('all')   // фильтр списка — карточки сверху
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [form, setForm] = useState({ make: '', model: '', plate: '', owner_group: 'main' as string })
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
@@ -190,27 +191,32 @@ export default function CarsView() {
   const leavingLabel = (c: Car) => c.removed_from && c.removed_from > curP ? `Уходит с ${format(parseISO(c.removed_from), 'MMMM', { locale: ru })}` : ''
   const inactiveCount = fleetCars.filter(c => idleOf(c.id)).length
   const activeCount = fleetCars.length - inactiveCount
+  const listCars = fleetCars.filter(c => filter === 'all' || (filter === 'idle') === !!idleOf(c.id))
 
 
   return (
     <div className="space-y-5">
-      {/* Summary */}
+      {/* Сводка — она же фильтр списка: нажмите «В работе» или «В простое» */}
       <div className="grid grid-cols-3 gap-3 sm:gap-4">
-        {[
-          { label: 'Всего', value: fleetCars.length, color: 'text-gray-900', bg: 'bg-white' },
-          { label: 'В работе', value: activeCount, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'В простое', value: inactiveCount, color: 'text-red-500', bg: 'bg-red-50' },
-        ].map(s => (
-          <div key={s.label} className={`${s.bg} rounded-[18px] p-3 sm:p-4 border border-gray-100/80 card-shadow min-w-0`}>
-            <p className="text-xs text-gray-400 font-medium mb-1 truncate">{s.label}</p>
+        {([
+          { key: 'all', label: 'Все', value: fleetCars.length, color: 'text-gray-900', on: 'ring-[#4F46E5] bg-indigo-50' },
+          { key: 'work', label: 'В работе', value: activeCount, color: 'text-emerald-600', on: 'ring-emerald-500 bg-emerald-50' },
+          { key: 'idle', label: 'В простое', value: inactiveCount, color: 'text-red-500', on: 'ring-red-400 bg-red-50' },
+        ] as const).map(s => (
+          <button key={s.key} onClick={() => setFilter(s.key)} aria-pressed={filter === s.key}
+            className={`text-left rounded-[18px] p-3 sm:p-4 border border-gray-100/80 card-shadow min-w-0 transition-colors ${filter === s.key ? `ring-2 ${s.on}` : 'bg-white'}`}>
+            <p className="text-xs text-gray-500 font-medium mb-1 truncate">{s.label}</p>
             <p className={`text-2xl sm:text-3xl font-bold tabular-nums ${s.color}`}>{loading ? '—' : s.value}</p>
-          </div>
+          </button>
         ))}
       </div>
 
       <Card>
         <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-bold text-gray-900">Автомобили</h2>
+          <h2 className="text-base font-bold text-gray-900">
+            {filter === 'all' ? 'Автомобили' : filter === 'work' ? 'В работе' : 'В простое'}
+            {filter !== 'all' && <button onClick={() => setFilter('all')} className="ml-2 text-xs font-medium text-[#4F46E5] dark:text-indigo-300">показать все</button>}
+          </h2>
           <button
             onClick={() => { setShowAdd(true); setForm({ make: '', model: '', plate: '', owner_group: 'main' }); setFormErrors({}) }}
             className="btn-primary flex items-center gap-2 px-4 py-2"
@@ -227,7 +233,7 @@ export default function CarsView() {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Поиск по номеру или названию..."
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
+              className="w-full pl-9 pr-4 py-2 text-base sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
             />
           </div>
           {searchResults.length > 0 && (
@@ -252,7 +258,7 @@ export default function CarsView() {
         ) : (<>
           {/* Телефон — карточки */}
           <div className="sm:hidden divide-y divide-gray-100">
-            {fleetCars.map(car => {
+            {listCars.map(car => {
               const block = shownBlock(car.id)
               return (
                 <div
@@ -300,7 +306,7 @@ export default function CarsView() {
                 </div>
               )
             })}
-            {fleetCars.length === 0 && <p className="px-4 py-12 text-center text-gray-400 text-sm">Авто не добавлено</p>}
+            {listCars.length === 0 && <p className="px-4 py-12 text-center text-gray-400 text-sm">{filter === 'idle' ? 'Сейчас в простое никого нет' : filter === 'work' ? 'Нет машин в работе' : 'Авто не добавлено'}</p>}
           </div>
 
           {/* Компьютер — таблица */}
@@ -316,7 +322,7 @@ export default function CarsView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {fleetCars.map(car => (
+              {listCars.map(car => (
                 <tr
                   key={car.id}
                   ref={el => { rowRefs.current[car.id] = el }}
@@ -370,7 +376,7 @@ export default function CarsView() {
                   </td>
                 </tr>
               ))}
-              {fleetCars.length === 0 && (
+              {listCars.length === 0 && (
                 <tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">Авто не добавлено</td></tr>
               )}
             </tbody>

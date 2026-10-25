@@ -5,11 +5,12 @@ import { createPortal } from 'react-dom'
 
 // Выезжающая панель: на компьютере — под кнопкой, на телефоне — снизу экрана.
 // Рисуется поверх страницы (portal в body), поэтому её не обрезают контейнеры с прокруткой (например, полоса вкладок).
-export default function Popover({ trigger, children, align = 'left', panelClass = 'sm:w-80' }: {
+export default function Popover({ trigger, children, align = 'left', panelClass = 'sm:w-80', className = '' }: {
   trigger: (open: boolean, toggle: () => void) => ReactNode
   children: (close: () => void) => ReactNode
   align?: 'left' | 'right'
   panelClass?: string  // ширина на компьютере, например 'sm:w-72'
+  className?: string   // классы обёртки (например, flex-1)
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null)
@@ -53,7 +54,7 @@ export default function Popover({ trigger, children, align = 'left', panelClass 
   }, [open])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={`relative min-w-0 ${className}`}>
       {trigger(open, () => setOpen(o => !o))}
       {open && pos && createPortal(
         <>

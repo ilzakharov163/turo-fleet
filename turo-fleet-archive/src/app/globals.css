@@ -79,9 +79,14 @@ html.dark input::placeholder,
 html.dark textarea::placeholder { color: #5D6684; }
 html.dark ::-webkit-scrollbar-thumb { background: #2C3550; }
 
-/* Как в приложении: без пружинящего отскока и сдвига страницы пальцем */
+/* Как в приложении: без пружинящего отскока, сдвига страницы и двойного тапа для зума */
 html, body {
   overscroll-behavior: none;
+  touch-action: manipulation;
+}
+/* iPhone приближает страницу, если у поля шрифт меньше 16px, и не отдаляет обратно — на телефоне все поля 16px */
+@media (max-width: 639px) {
+  input, select, textarea { font-size: 16px !important; }
 }
 
 body {

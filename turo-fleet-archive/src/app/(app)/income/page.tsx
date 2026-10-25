@@ -579,7 +579,7 @@ function NumCell({ grid, row, col, value, onCommit, pct = false, placeholder = '
         else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1, t) }
         else if (e.key === 'Escape') { skip.current = true; t.blur() }
       }}
-      className={`w-full min-w-0 text-right tabular-nums text-[15px] sm:text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-none bg-transparent px-3 py-2.5 hover:bg-indigo-50 focus:relative focus:z-10'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
+      className={`w-full min-w-0 text-right tabular-nums text-base sm:text-sm outline-none transition-colors placeholder:text-gray-300 focus:bg-white focus:ring-2 focus:ring-indigo-500 ${boxed ? 'rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-base' : 'rounded-none bg-transparent px-3 py-2.5 hover:bg-indigo-50 focus:relative focus:z-10'} ${strong ? 'font-semibold text-gray-900' : 'text-gray-700'}`} />
   )
 }
 
@@ -1063,21 +1063,22 @@ export default function IncomePage() {
       {/* Вкладки: одна аккуратная полоса; аккаунты — в выпадающем меню */}
       {(() => {
         const accActiveView = sum.accs.find(x => x.a.key === view)
-        const seg = (on: boolean) => `inline-flex items-center gap-1.5 h-9 px-3 sm:px-3.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${on ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`
+        const seg = (on: boolean) => `inline-flex items-center justify-center gap-0.5 sm:gap-1.5 h-9 px-1.5 sm:px-3.5 rounded-lg text-[13px] sm:text-sm font-medium whitespace-nowrap transition-colors min-w-0 ${on ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-800'}`
         return (
-          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-full sm:w-fit overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          <div className="flex items-center gap-0.5 sm:gap-1 p-1 bg-gray-100 rounded-xl w-full sm:w-fit">
             <button onClick={() => setView('summary')} className={seg(view === 'summary')}>Сводка</button>
             <button onClick={() => setView('gross')} className={seg(view === 'gross')}>
               Gross
-              {!loading && grossRows.length > 0 && <span className={`text-xs tabular-nums ${grossFilled === grossRows.length ? 'text-emerald-600' : 'text-gray-400'}`}>{grossFilled}/{grossRows.length}</span>}
+              {!loading && grossRows.length > 0 && <span className={`hidden sm:inline text-xs tabular-nums ${grossFilled === grossRows.length ? 'text-emerald-600' : 'text-gray-400'}`}>{grossFilled}/{grossRows.length}</span>}
             </button>
             <Popover
               panelClass="sm:w-72"
+              className="flex-1 sm:flex-none"
               trigger={(open, toggle) => (
-                <button onClick={toggle} className={seg(!!accActiveView || open)}>
-                  {accActiveView && <span className={`w-2 h-2 rounded-full ${colorOf(accActiveView.a.key).dot}`} />}
-                  {accActiveView ? accActiveView.a.label : 'Аккаунты'}
-                  <ChevronDown size={14} className="text-gray-400" />
+                <button onClick={toggle} className={`w-full ${seg(!!accActiveView || open)}`}>
+                  {accActiveView && <span className={`w-2 h-2 rounded-full flex-shrink-0 ${colorOf(accActiveView.a.key).dot}`} />}
+                  <span className="truncate">{accActiveView ? accActiveView.a.label : 'Аккаунты'}</span>
+                  <ChevronDown size={13} className="text-gray-400 flex-shrink-0" />
                 </button>
               )}
             >
@@ -1151,7 +1152,28 @@ export default function IncomePage() {
               <h2 className="text-base font-bold text-gray-900">По аккаунтам</h2>
               <span className="hidden sm:inline text-xs text-gray-400">нажмите на строку, чтобы открыть таблицу аккаунта</span>
             </div>
-            <div className="overflow-x-auto">
+            {/* Телефон — списком, нажмите на аккаунт */}
+            <ul className="sm:hidden divide-y divide-gray-100 border-t border-gray-100">
+              {sum.accs.filter(x => x.cars > 0 || x.t.net !== 0).map(x => (
+                <li key={x.a.key}>
+                  <button onClick={() => setView(x.a.key)} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-gray-50">
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${colorOf(x.a.key).dot}`} />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[15px] font-semibold text-gray-900 truncate">{x.a.label} <span className="text-xs font-normal text-gray-400">· {x.cars}</span></span>
+                      <span className="block text-xs text-gray-500 truncate">gross {money(x.t.gross)} · клеймы {money(x.t.claim + x.t.supp - x.t.ded - x.t.repair)}{x.t.other + x.t.payment ? ` · расходы −${abs(x.t.other + x.t.payment)}` : ''}</span>
+                    </span>
+                    <span className={`text-base font-bold tabular-nums ${x.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(x.t.net)}</span>
+                  </button>
+                </li>
+              ))}
+              <li className="flex items-center justify-between px-4 py-2.5 bg-gray-50 text-sm font-semibold"><span>Итого по аккаунтам</span><span className="tabular-nums">{money(sum.total.net)}</span></li>
+              <li><button onClick={() => setView('expenses')} className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-600"><span>Расходы компании</span><span className="tabular-nums">−{abs(sum.company)}</span></button></li>
+              <li><button onClick={() => setView('expenses')} className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-600"><span>Затраты на сотрудника</span><span className="tabular-nums">−{abs(sum.staff)}</span></button></li>
+              <li><button onClick={() => setView('payments')} className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-600"><span>Платежи</span><span className="tabular-nums">−{abs(sum.pays)}</span></button></li>
+              <li className={`flex items-center justify-between px-4 py-3 font-bold ${profitUp ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}><span className="text-gray-900">Чистая прибыль</span><span className="tabular-nums">{money(sum.profit)}</span></li>
+            </ul>
+
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full min-w-[780px] border-collapse text-[15px] sm:text-sm tabular-nums">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
@@ -1373,23 +1395,67 @@ export default function IncomePage() {
         </div>
       ) : activeAcc ? (
         <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 px-4 sm:px-5 py-4 border-b border-gray-100">
-            <span className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${colorOf(activeAcc.a.key).soft}`}>{activeAcc.a.label.slice(0, 1)}</span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-base font-bold text-gray-900">{activeAcc.a.label}</h2>
-              <p className={`text-xs ${saveState === 'error' ? 'text-red-600' : saveState === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>{monthName(period)} · {saveLabel}</p>
+          {/* Шапка аккаунта: имя и действия, ниже — итоги месяца одной строкой */}
+          <div className="px-4 sm:px-5 pt-4 pb-3 border-b border-gray-100">
+            <div className="flex items-center gap-3">
+              <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold flex-shrink-0 ${colorOf(activeAcc.a.key).soft}`}>{activeAcc.a.label.slice(0, 1)}</span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-bold text-gray-900 truncate">{activeAcc.a.label}</h2>
+                <p className={`text-xs truncate ${saveState === 'error' ? 'text-red-600' : saveState === 'saved' ? 'text-emerald-600' : 'text-gray-400'}`}>{accCars.length} {accCars.length === 1 ? 'машина' : accCars.length >= 2 && accCars.length <= 4 ? 'машины' : 'машин'} · {saveLabel}</p>
+              </div>
+              <button onClick={() => openEditAccount(activeAcc.a)} className="btn-secondary inline-flex items-center justify-center gap-1.5 w-9 sm:w-auto sm:px-3 h-9" aria-label="Настроить аккаунт"><Pencil size={15} /><span className="hidden sm:inline">Аккаунт</span></button>
+              <button onClick={() => setAddCar(true)} className="btn-primary inline-flex items-center gap-1.5 px-3 h-9"><Plus size={16} /> Машина</button>
             </div>
-            <div className="text-right mr-1">
-              <p className="text-[11px] uppercase tracking-wide text-gray-400">Итог</p>
-              <p className={`text-xl font-bold tabular-nums ${activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{money(activeAcc.t.net)}</p>
+            <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+              {[
+                { label: 'Итог', value: money(activeAcc.t.net), cls: activeAcc.t.net < 0 ? 'text-red-600' : 'text-gray-900', strong: true },
+                { label: 'Gross', value: money(activeAcc.t.gross), cls: 'text-gray-900' },
+                { label: 'Клеймы', value: money(activeAcc.t.claim + activeAcc.t.supp - activeAcc.t.ded), cls: 'text-gray-900' },
+                { label: 'Расходы', value: activeAcc.t.repair + activeAcc.t.other + activeAcc.t.payment ? `−${abs(activeAcc.t.repair + activeAcc.t.other + activeAcc.t.payment)}` : '—', cls: 'text-gray-500' },
+              ].map(st => (
+                <div key={st.label} className={`rounded-xl px-1.5 py-2 ${st.strong ? (activeAcc.t.net < 0 ? 'bg-red-50' : 'bg-emerald-50') : 'bg-gray-50'}`}>
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">{st.label}</p>
+                  <p className={`text-sm font-bold tabular-nums truncate ${st.cls}`}>{st.value}</p>
+                </div>
+              ))}
             </div>
-            <button onClick={() => openEditAccount(activeAcc.a)} className="btn-secondary inline-flex items-center gap-1.5 px-3 h-9" aria-label="Настроить аккаунт"><Pencil size={15} /><span className="hidden sm:inline">Аккаунт</span></button>
-            <button onClick={() => setAddCar(true)} className="btn-primary inline-flex items-center gap-1.5 px-3 h-9"><Plus size={16} /> Машина</button>
           </div>
           {accCars.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-400">В этом аккаунте нет машин за этот месяц</div>
-          ) : (
-            <div className="overflow-x-auto">
+          ) : (<>
+            {/* Телефон: у каждой машины — Gross прямо здесь, остальное по нажатию на машину */}
+            <ul className="sm:hidden divide-y divide-gray-100">
+              {accCars.map((c, ri) => {
+                const e = entryOf(c.id, period)
+                const t = calc(e)
+                const extras = [
+                  t.claim + t.supp ? `клейм ${money(t.claim + t.supp - t.ded)}` : '',
+                  t.repair ? `ремонт −${abs(t.repair)}` : '',
+                  t.other ? `прочее −${abs(t.other)}` : '',
+                  t.payment ? `платёж −${abs(t.payment)}` : '',
+                ].filter(Boolean)
+                return (
+                  <li key={c.id} className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setDrawer(c.id)} className="flex-1 min-w-0 text-left">
+                        <span className="block text-[15px] font-semibold text-gray-900 truncate">{c.name}</span>
+                        <span className="block text-xs text-gray-500 truncate"><span className="font-mono font-semibold text-gray-600">{c.car?.plate || 'не привязана'}</span>{extras.length ? ` · ${extras.join(' · ')}` : ''}</span>
+                      </button>
+                      <span className={`text-base font-bold tabular-nums whitespace-nowrap ${!e ? 'text-gray-300' : t.net < 0 ? 'text-red-600' : 'text-gray-900'}`}>{e ? money(t.net) : '—'}</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-500 w-12">Gross</span>
+                      <div className="flex-1">
+                        <NumCell grid={`m-acc-${activeAcc.a.key}`} row={ri} col={0} value={n(e?.gross)} placeholder="0" strong boxed onCommit={v => patchEntry(c.id, x => ({ ...x, gross: v }))} />
+                      </div>
+                      <button onClick={() => setDrawer(c.id)} className="h-11 px-3 rounded-xl bg-gray-100 text-sm font-medium text-gray-700">Ещё</button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full min-w-[1010px] table-fixed border-collapse text-[15px] sm:text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-gray-500">
@@ -1465,8 +1531,9 @@ export default function IncomePage() {
                 </tfoot>
               </table>
             </div>
-          )}
-          <p className="px-4 sm:px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Белые ячейки можно редактировать — нажмите и пишите цифру, сохраняется само. «Платёж» — платёж за машину, если его платите вы; в новый месяц переносится сам (поставьте 0, если платежа больше нет). Enter — следующая строка, Tab — следующая колонка. Серые считаются автоматически. Несколько клеймов, прочие расходы и история — нажмите на название машины.</p>
+          </>)}
+          <p className="sm:hidden px-4 py-3 text-xs text-gray-400 border-t border-gray-100">Gross вписывайте прямо здесь. Клеймы, ремонт, прочие расходы и платёж — кнопка «Ещё» или нажмите на машину.</p>
+          <p className="hidden sm:block px-5 py-3 text-xs text-gray-400 border-t border-gray-100">Белые ячейки можно редактировать — нажмите и пишите цифру, сохраняется само. «Платёж» — платёж за машину, если его платите вы; в новый месяц переносится сам (поставьте 0, если платежа больше нет). Enter — следующая строка, Tab — следующая колонка. Серые считаются автоматически. Несколько клеймов, прочие расходы и история — нажмите на название машины.</p>
         </div>
       ) : null}
 
