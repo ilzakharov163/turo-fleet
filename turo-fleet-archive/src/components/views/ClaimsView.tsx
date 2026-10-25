@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
@@ -8,7 +8,10 @@ import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote, Search }
 import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
-import { ask } from '@/lib/ui'
+import { ask, notify } from '@/lib/ui'
+import { canAny, useAccess } from '@/lib/access'
+import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
+import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
 import { inputCls } from '@/components/ui/PageShell'
 
@@ -24,6 +27,11 @@ interface Claim {
   notes: string | null
   claim_number: string | null
   description: string | null
+  initial_amount: number | null
+  initial_period: string | null
+  supplement_amount: number | null
+  supplement_pct: number | null
+  supplement_period: string | null
   created_at: string
   car?: Car
 }
@@ -77,6 +85,9 @@ export default function ClaimsView() {
   const [openNotes, setOpenNotes] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [formError, setFormError] = useState('')
+  // Окно суммы Initial / Supplement (сумма сразу попадает в «Доходы» машины)
+  const [pay, setPay] = useState<{ c: Claim; kind: ClaimKind; amount: string; pct: string; month: string; busy: boolean; error: string } | null>(null)
+  const access = useAccess()
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -89,6 +100,7 @@ export default function ClaimsView() {
     setLoading(false)
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [load])
 
   function openAdd() {
@@ -155,14 +167,53 @@ export default function ClaimsView() {
     load()
   }
 
-  async function toggleField(c: Claim, field: 'initial_payment_received' | 'supplement_paid') {
-    const val = !c[field]
-    setClaims(prev => prev.map(x => (x.id === c.id ? { ...x, [field]: val } : x)))
-    const supabase = createClient()
-    const { error } = await supabase.from('claims').update({ [field]: val }).eq('id', c.id)
-    if (error) { load(); return }
-    await log('update', 'claim', c.id, { [field]: val })
+  function openPay(c: Claim, kind: ClaimKind) {
+    const amount = kind === 'initial' ? c.initial_amount : c.supplement_amount
+    const per = kind === 'initial' ? c.initial_period : c.supplement_period
+    setPay({ c, kind, amount: amount ? String(amount) : '', pct: String(Math.round(((c.supplement_pct ?? 0.2) * 100) * 100) / 100), month: (per || format(new Date(), 'yyyy-MM-01')).slice(0, 7), busy: false, error: '' })
   }
+
+  async function savePay() {
+    if (!pay) return
+    const amount = Number(pay.amount.replace(',', '.'))
+    if (!(amount > 0)) { setPay({ ...pay, error: 'Введите сумму' }); return }
+    const pct = Math.min(100, Math.max(0, Number(pay.pct.replace(',', '.')) || 0)) / 100
+    const period = `${pay.month}-01`
+    const { c, kind } = pay
+    setPay({ ...pay, busy: true, error: '' })
+    const canIncome = canAny(access, ['/income'])
+    if (canIncome) {
+      const err = await putClaimPayment({ claimId: c.id, carId: c.car_id, kind, amount, pct, period, prevPeriod: kind === 'initial' ? c.initial_period : c.supplement_period })
+      if (err) { setPay({ ...pay, busy: false, error: err }); return }
+    }
+    const update = kind === 'initial'
+      ? { initial_payment_received: true, initial_amount: amount, initial_period: period }
+      : { supplement_paid: true, supplement_amount: amount, supplement_pct: pct, supplement_period: period }
+    const { error } = await createClient().from('claims').update(update).eq('id', c.id)
+    if (error) { setPay({ ...pay, busy: false }); return }
+    await log('update', 'claim', c.id, update)
+    notify(canIncome ? `${kind === 'initial' ? 'Initial' : 'Supplement'} записан в «Доходы»` : 'Сумма сохранена в клейме (в «Доходы» не записана — нет доступа)', canIncome ? 'success' : 'info')
+    setPay(null)
+    load()
+  }
+
+  async function clearPay() {
+    if (!pay) return
+    const { c, kind } = pay
+    const amount = kind === 'initial' ? c.initial_amount : c.supplement_amount
+    const per = kind === 'initial' ? c.initial_period : c.supplement_period
+    if (!await ask(`Снять отметку ${kind === 'initial' ? 'Initial' : 'Supplement'}?`, { detail: amount && per ? `Сумма ${amount} уберётся из «Доходов» за ${format(parseISO(per), 'LLLL', { locale: ru })}.` : undefined, ok: 'Снять' })) return
+    setPay({ ...pay, busy: true })
+    if (canAny(access, ['/income'])) await dropClaimPayment({ claimId: c.id, carId: c.car_id, kind, period: per })
+    const update = kind === 'initial'
+      ? { initial_payment_received: false, initial_amount: null, initial_period: null }
+      : { supplement_paid: false, supplement_amount: null, supplement_pct: null, supplement_period: null }
+    await createClient().from('claims').update(update).eq('id', c.id)
+    await log('update', 'claim', c.id, update)
+    setPay(null)
+    load()
+  }
+
 
   async function setStatus(c: Claim, status: Claim['status']) {
     const supabase = createClient()
@@ -189,7 +240,7 @@ export default function ClaimsView() {
   const monthLabel = format(month, 'LLLL yyyy', { locale: ru })
 
   // ── Строка активного клейма ──
-  function ActiveRow({ c }: { c: Claim }) {
+  function activeRow(c: Claim) {
     const notesOpen = openNotes === c.id
     return (
       <div className="px-4 py-3">
@@ -214,18 +265,18 @@ export default function ClaimsView() {
           </div>
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => toggleField(c, 'initial_payment_received')}
+              onClick={() => openPay(c, 'initial')}
               title="Initial payment получен"
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${c.initial_payment_received ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white text-gray-400 border-gray-200 hover:bg-gray-50'}`}
             >
-              {c.initial_payment_received ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-gray-300" />} Initial
+              {c.initial_payment_received ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-gray-300" />} Initial{c.initial_amount ? ` $${Number(c.initial_amount).toLocaleString('en-US')}` : ''}
             </button>
             <button
-              onClick={() => toggleField(c, 'supplement_paid')}
+              onClick={() => openPay(c, 'supplement')}
               title="Supplement оплачен"
               className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${c.supplement_paid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-500 border-red-200 hover:bg-red-100'}`}
             >
-              {c.supplement_paid ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-red-300" />} Supplement
+              {c.supplement_paid ? <Check size={11} /> : <span className="w-[11px] h-[11px] rounded-sm border border-red-300" />} Supplement{c.supplement_amount ? ` $${Number(c.supplement_amount).toLocaleString('en-US')}` : ''}
             </button>
           </div>
           <div className="flex items-center gap-1 ml-auto">
@@ -242,7 +293,7 @@ export default function ClaimsView() {
     )
   }
 
-  function Section({ title, dot, items, empty }: { title: string; dot: string; items: Claim[]; empty: string }) {
+  function section(title: string, dot: string, items: Claim[], empty: string) {
     return (
       <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
@@ -253,7 +304,7 @@ export default function ClaimsView() {
         {items.length === 0 ? (
           <p className="px-4 py-4 text-sm text-gray-400">{empty}</p>
         ) : (
-          <div className="divide-y divide-gray-100">{items.map(c => <ActiveRow key={c.id} c={c} />)}</div>
+          <div className="divide-y divide-gray-100">{items.map(c => <Fragment key={c.id}>{activeRow(c)}</Fragment>)}</div>
         )}
       </div>
     )
@@ -296,7 +347,7 @@ export default function ClaimsView() {
                   </div>
                   <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
                 </div>
-              ) : <ActiveRow key={c.id} c={c} />)}
+              ) : <Fragment key={c.id}>{activeRow(c)}</Fragment>)}
             </div>
           )}
         </div>
@@ -304,8 +355,8 @@ export default function ClaimsView() {
 
       {!loading && !q && (
         <>
-          <Section title="Ожидают ремонта" dot="bg-yellow-400" items={waiting} empty="Нет машин в очереди" />
-          <Section title="В ремонте" dot="bg-blue-500" items={inRepair} empty="Сейчас в ремонте ничего нет" />
+          {section('Ожидают ремонта', 'bg-yellow-400', waiting, 'Нет машин в очереди')}
+          {section('В ремонте', 'bg-blue-500', inRepair, 'Сейчас в ремонте ничего нет')}
 
           {/* Завершённые — по месяцам, без Initial/Supplement */}
           <div className="bg-white rounded-[18px] border border-gray-100/80 card-shadow overflow-hidden">
@@ -423,6 +474,44 @@ export default function ClaimsView() {
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 btn-secondary h-11">Отмена</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {pay && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget && !pay.busy) setPay(null) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{pay.kind === 'initial' ? 'Initial получен' : 'Supplement получен'}</h2>
+              <p className="text-sm text-gray-500"><CarTitle c={pay.c} />{pay.c.claim_number ? ` · № ${pay.c.claim_number}` : ''}</p>
+            </div>
+            <div className={pay.kind === 'supplement' ? 'grid grid-cols-[1fr_110px] gap-3' : ''}>
+              <label className="block">
+                <span className="block text-sm font-medium text-gray-700 mb-1">Сумма, $</span>
+                <input autoFocus inputMode="decimal" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value, error: '' })} placeholder="0" className={inputCls} />
+              </label>
+              {pay.kind === 'supplement' && (
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-700 mb-1">Вычет Turo, %</span>
+                  <input inputMode="decimal" value={pay.pct} onChange={e => setPay({ ...pay, pct: e.target.value })} className={inputCls} />
+                </label>
+              )}
+            </div>
+            <div>
+              <span className="block text-sm font-medium text-gray-700 mb-1">В какой месяц «Доходов»</span>
+              <MonthPicker value={pay.month} onChange={m => setPay({ ...pay, month: m })} min={format(subMonths(new Date(), 12), 'yyyy-MM')} max={format(addMonths(new Date(), 1), 'yyyy-MM')} className="w-full" />
+            </div>
+            {pay.kind === 'supplement' && Number(pay.amount) > 0 && (
+              <p className="text-xs text-gray-500">В «Доходы» попадёт {Number(pay.amount).toLocaleString('en-US')} − вычет {pay.pct || 0}% = <b>${(Number(pay.amount) * (1 - (Number(pay.pct) || 0) / 100)).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b></p>
+            )}
+            {!canAny(access, ['/income']) && <p className="text-xs text-orange-600">У вас нет доступа к «Доходам» — сумма сохранится только в клейме.</p>}
+            {pay.error && <p className="text-sm text-red-600">{pay.error}</p>}
+            <div className="flex gap-2 pt-1">
+              {(pay.kind === 'initial' ? pay.c.initial_payment_received : pay.c.supplement_paid) && (
+                <button type="button" onClick={clearPay} disabled={pay.busy} className="h-11 px-3 rounded-[10px] border border-red-200 text-red-500 text-sm font-semibold hover:bg-red-50">Снять</button>
+              )}
+              <button type="button" onClick={() => setPay(null)} disabled={pay.busy} className="btn-secondary flex-1 h-11">Отмена</button>
+              <button type="button" onClick={savePay} disabled={pay.busy} className="btn-primary flex-1 h-11">{pay.busy ? 'Сохраняю…' : 'Сохранить'}</button>
+            </div>
           </div>
         </div>
       )}

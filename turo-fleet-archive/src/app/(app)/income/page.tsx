@@ -22,7 +22,8 @@ import { removeCarFrom, restoreCar } from '@/lib/fleet'
 import { calcSalary, calcEntry, inFleet, appliedDeductions, staffCost } from '@/lib/calc'
 
 // ── Типы ──
-type ClaimItem = { claim: number; supplement: number; pct: number }
+// claim_id — строка пришла из «Клеймов» (Initial / Supplement), см. lib/claimIncome.ts
+type ClaimItem = { claim: number; supplement: number; pct: number; claim_id?: string }
 type OtherItem = { desc: string; amount: number }
 
 interface Account { key: string; label: string; sort: number; active_from: string; active_until: string | null }
@@ -130,8 +131,9 @@ function CarDrawer({
   const [gross, setGross] = useState(base.gross ? String(base.gross) : '')
   const [repair, setRepair] = useState(base.repair ? String(base.repair) : '')
   const [payment, setPayment] = useState(base.payment ? String(base.payment) : '')
-  const [claims, setClaims] = useState(base.claim_items.map(c => ({
+  const [claims, setClaims] = useState<{ claim: string; supplement: string; pct: string; link?: Pick<ClaimItem, 'claim_id'> }[]>(base.claim_items.map(c => ({
     claim: c.claim ? String(c.claim) : '', supplement: c.supplement ? String(c.supplement) : '', pct: c.pct ? String(round2(n(c.pct) * 100)) : '',
+    link: c.claim_id ? { claim_id: c.claim_id } : undefined,
   })))
   const [others, setOthers] = useState(base.other_items.map(o => ({ desc: o.desc, amount: o.amount ? String(o.amount) : '' })))
   const [saving, setSaving] = useState(false)
@@ -147,11 +149,11 @@ function CarDrawer({
     gross: n(gross), repair: n(repair),
     // пустое поле = 0 (платежа нет), если раньше он был задан; иначе оставляем «не задан»
     payment: payment.trim() ? n(payment) : (base.payment == null ? null : 0),
-    claim_items: claims.filter(c => c.claim || c.supplement).map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: round6(n(c.pct) / 100) })),
+    claim_items: claims.filter(c => c.claim || c.supplement).map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: round6(n(c.pct) / 100), ...c.link })),
     other_items: others.filter(o => o.desc.trim() || o.amount).map(o => ({ desc: o.desc.trim(), amount: n(o.amount) })),
   }
   const t = calc(draft)
-  const dirty = JSON.stringify([draft.gross, draft.repair, draft.payment ?? null, draft.claim_items, draft.other_items]) !==
+  const dirty = JSON.stringify([draft.gross, draft.repair, draft.payment ?? null, draft.claim_items.map(c => ({ claim: c.claim, supplement: c.supplement, pct: c.pct })), draft.other_items]) !==
     JSON.stringify([n(base.gross), n(base.repair), base.payment ?? null, base.claim_items.map(c => ({ claim: n(c.claim), supplement: n(c.supplement), pct: n(c.pct) })), base.other_items.map(o => ({ desc: o.desc, amount: n(o.amount) }))])
 
   async function save() {
@@ -256,7 +258,7 @@ function CarDrawer({
                         </label>
                       </div>
                       <div className="flex items-center justify-between mt-2 text-xs">
-                        <span className="text-gray-500 tabular-nums">{ded ? <>Turo удержит <b className="text-gray-700">{money(ded)}</b></> : 'Без вычета'}</span>
+                        <span className="text-gray-500 tabular-nums">{c.link && <span className="mr-1.5 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-600 dark:text-indigo-300">из Клеймов</span>}{ded ? <>Turo удержит <b className="text-gray-700">{money(ded)}</b></> : 'Без вычета'}</span>
                         <button type="button" onClick={() => setClaims(cs => cs.filter((_, j) => j !== i))} className="inline-flex items-center gap-1 text-gray-400 hover:text-red-500"><Trash2 size={13} /> Убрать</button>
                       </div>
                     </div>

@@ -63,3 +63,10 @@ alter table public.revenue_entries add column if not exists payment numeric;
 alter table public.claims add column if not exists claim_number text;
 alter table public.claims add column if not exists description text;
 create unique index if not exists claims_claim_number_uniq on public.claims (lower(trim(claim_number))) where claim_number is not null and trim(claim_number) <> '';
+
+-- 25.10.2026, миграция claims_payments: суммы Initial / Supplement клейма и месяц «Доходов», куда они записаны
+alter table public.claims add column if not exists initial_amount numeric;
+alter table public.claims add column if not exists initial_period date;
+alter table public.claims add column if not exists supplement_amount numeric;
+alter table public.claims add column if not exists supplement_pct numeric;
+alter table public.claims add column if not exists supplement_period date;
