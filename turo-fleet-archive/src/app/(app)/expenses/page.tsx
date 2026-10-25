@@ -14,6 +14,8 @@ import Popover from '@/components/ui/Popover'
 import { notify, ask } from '@/lib/ui'
 import { inputCls } from '@/components/ui/PageShell'
 
+const usd = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [cars, setCars] = useState<Car[]>([])
@@ -27,6 +29,9 @@ export default function ExpensesPage() {
   const [uploading, setUploading] = useState(false)
   const [filterCar, setFilterCar] = useState('')
   const [filterMonth, setFilterMonth] = useState(format(new Date(), 'yyyy-MM'))
+  // Переведено сотруднику на расходы по месяцам ('yyyy-MM' → $) — поле «Расходы» в «Доходы → Расходы» (revenue_month_expenses.salary1).
+  // null — нет доступа к «Доходам», карточку не показываем.
+  const [transferred, setTransferred] = useState<Record<string, number> | null>(null)
   const [filterCats, setFilterCats] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [noReceipt, setNoReceipt] = useState(false)
@@ -39,18 +44,21 @@ export default function ExpensesPage() {
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [carsRes, expRes] = await Promise.all([
+    const [carsRes, expRes, trRes] = await Promise.all([
       supabase.from('cars').select('*').order('make'),
       // Только последние 12 месяцев — столько, сколько вкладок месяцев
       supabase.from('expenses').select('*, car:cars(make,model,plate)').gte('date', format(startOfMonth(subMonths(new Date(), 11)), 'yyyy-MM-dd'))
         .order('date', { ascending: true }).order('created_at', { ascending: true }),
+      supabase.from('revenue_month_expenses').select('period, salary1'),
     ])
+    setTransferred(trRes.error ? null : Object.fromEntries((trRes.data || []).map(x => [String(x.period).slice(0, 7), Number(x.salary1) || 0])))
     setCars(carsRes.data || [])
     setExpenses(expRes.data as Expense[] || [])
 
     setLoading(false)
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [load])
 
   async function getSignedUrl(path: string): Promise<string> {
@@ -248,6 +256,11 @@ export default function ExpensesPage() {
   const totalFiltered = filtered.reduce((s, e) => s + Number(e.amount), 0)
   const paidTotal = filtered.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
   const unpaidTotal = totalFiltered - paidTotal
+  // Переведено сотруднику за выбранный месяц (или за 12 месяцев) и сколько из этого ещё не потрачено (все машины и статьи)
+  const monthKeys = filterMonth === 'all' ? months.map(m => m.value) : [filterMonth]
+  const transferredSum = transferred ? monthKeys.reduce((s, k) => s + (transferred[k] || 0), 0) : 0
+  const spentAll = expenses.filter(e => monthKeys.some(k => e.date.startsWith(k))).reduce((s, e) => s + Number(e.amount), 0)
+  const transferLeft = transferredSum - spentAll
   const selectedTotal = filtered.filter(e => selected.has(e.id)).reduce((s, e) => s + Number(e.amount), 0)
   const allSelected = filtered.length > 0 && filtered.every(e => selected.has(e.id))
   function toggleSelectAll() {
@@ -334,13 +347,30 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Итоги по выбранному */}
+      {/* Итоги по выбранному + сколько переведено сотруднику (из «Доходов») */}
       {!loading && (
-        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 mb-3 px-1 text-sm">
-          <span className="text-gray-500">{filtered.length} {filtered.length % 10 === 1 && filtered.length % 100 !== 11 ? 'расход' : [2, 3, 4].includes(filtered.length % 10) && ![12, 13, 14].includes(filtered.length % 100) ? 'расхода' : 'расходов'}</span>
-          <span className="text-gray-500">Всего <b className="text-gray-900 tabular-nums">${totalFiltered.toFixed(2)}</b></span>
-          <span className="text-gray-500">Оплачено <b className="text-emerald-600 tabular-nums">${paidTotal.toFixed(2)}</b></span>
-          {unpaidTotal > 0 && <span className="text-gray-500">Не оплачено <b className="text-rose-500 tabular-nums">${unpaidTotal.toFixed(2)}</b></span>}
+        <div className={`grid grid-cols-2 ${transferred ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-2 mb-3`}>
+          <div className="rounded-2xl bg-white border border-gray-100/80 card-shadow px-3.5 py-2.5">
+            <p className="text-[11px] text-gray-400">Расходы · {filtered.length}</p>
+            <p className="text-lg font-bold text-gray-900 tabular-nums">{usd(totalFiltered)}</p>
+          </div>
+          <div className="rounded-2xl bg-white border border-gray-100/80 card-shadow px-3.5 py-2.5">
+            <p className="text-[11px] text-gray-400">Оплачено</p>
+            <p className="text-lg font-bold text-emerald-600 tabular-nums">{usd(paidTotal)}</p>
+          </div>
+          <div className="rounded-2xl bg-white border border-gray-100/80 card-shadow px-3.5 py-2.5">
+            <p className="text-[11px] text-gray-400">Не оплачено</p>
+            <p className={`text-lg font-bold tabular-nums ${unpaidTotal > 0 ? 'text-rose-500' : 'text-gray-300'}`}>{usd(unpaidTotal)}</p>
+          </div>
+          {transferred && (
+            <a href={`/income?view=expenses${filterMonth === 'all' ? '' : `&month=${filterMonth}`}`} className="rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 px-3.5 py-2.5 hover:bg-indigo-50" title="Меняется в «Доходы → Расходы → Затраты на сотрудника → Расходы»">
+              <p className="text-[11px] text-indigo-500 dark:text-indigo-300">Переведено сотруднику</p>
+              <p className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tabular-nums">{usd(transferredSum)}</p>
+              {(transferredSum > 0 || spentAll > 0) && (
+                <p className={`text-[11px] tabular-nums ${transferLeft >= 0 ? 'text-gray-500' : 'text-rose-500'}`}>{transferLeft >= 0 ? `остаток ${usd(transferLeft)}` : `потрачено больше на ${usd(-transferLeft)}`}</p>
+              )}
+            </a>
+          )}
         </div>
       )}
 

@@ -19,6 +19,7 @@ import DeductionsEditor, { type Deduction } from '@/components/DeductionsEditor'
 import Popover from '@/components/ui/Popover'
 import { canAny, useAccess } from '@/lib/access'
 import { removeCarFrom, restoreCar } from '@/lib/fleet'
+import { ACCOUNT_COLORS as COLORS } from '@/lib/accountColors'
 import { calcSalary, calcEntry, inFleet, appliedDeductions, staffCost } from '@/lib/calc'
 
 // ── Типы ──
@@ -74,19 +75,6 @@ const monthName = (p: string, f = 'LLLL yyyy') => { const t = format(parseISO(p)
 
 const blockEnd = (b: Block) => (b.end_date ? parseISO(b.end_date) : new Date(9999, 0))
 
-// Цвета аккаунтов
-const COLORS = [
-  { dot: 'bg-indigo-500', soft: 'bg-indigo-50 text-indigo-700', ring: 'hover:border-indigo-200' },
-  { dot: 'bg-emerald-500', soft: 'bg-emerald-50 text-emerald-700', ring: 'hover:border-emerald-200' },
-  { dot: 'bg-amber-500', soft: 'bg-amber-50 text-amber-700', ring: 'hover:border-amber-200' },
-  { dot: 'bg-sky-500', soft: 'bg-sky-50 text-sky-700', ring: 'hover:border-sky-200' },
-  { dot: 'bg-rose-500', soft: 'bg-rose-50 text-rose-700', ring: 'hover:border-rose-200' },
-  { dot: 'bg-violet-500', soft: 'bg-violet-50 text-violet-700', ring: 'hover:border-violet-200' },
-  { dot: 'bg-orange-500', soft: 'bg-orange-50 text-orange-700', ring: 'hover:border-orange-200' },
-  { dot: 'bg-pink-500', soft: 'bg-pink-50 text-pink-700', ring: 'hover:border-pink-200' },
-  { dot: 'bg-lime-500', soft: 'bg-lime-50 text-lime-700', ring: 'hover:border-lime-200' },
-  { dot: 'bg-teal-500', soft: 'bg-teal-50 text-teal-700', ring: 'hover:border-teal-200' },
-]
 
 // ── Выгрузка ──
 function downloadFile(content: string, file: string, type: string) {
@@ -602,6 +590,13 @@ export default function IncomePage() {
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [view, setView] = useState<string>('summary')
   const [drawer, setDrawer] = useState<string | null>(null)
+  // Ссылка вида /income?view=expenses&month=2026-10 (из раздела «Расходы») открывает нужную вкладку и месяц
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const v = q.get('view'), m = q.get('month')
+    if (v) setView(v)
+    if (m && /^\d{4}-\d{2}$/.test(m)) setMonth(parseISO(`${m}-01`))
+  }, [])
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const entriesRef = useRef<Entry[]>([])
   const saveChain = useRef<Promise<void>>(Promise.resolve())

@@ -13,6 +13,7 @@ import { canAny, useAccess } from '@/lib/access'
 import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
 import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
+import { ACCOUNT_COLORS } from '@/lib/accountColors'
 import { inputCls } from '@/components/ui/PageShell'
 
 interface Claim {
@@ -66,10 +67,14 @@ function doneDate(c: Claim): string | null {
   return c.completed_date || c.opened_date || c.created_at || null
 }
 
-function CarTitle({ c }: { c: Claim }) {
+// Аккаунт «Доходов», на котором машина (имя и цвет точки как в «Доходах»)
+interface CarAccount { label: string; dot: string }
+
+function CarTitle({ c, acc }: { c: Claim; acc?: CarAccount | null }) {
   return c.car ? (
     <>
       {c.car.make} {c.car.model} <span className="font-semibold text-gray-900">{c.car.plate}</span>
+      {acc && <span className="ml-1.5 inline-flex items-center gap-1 align-middle rounded-md bg-gray-100 px-1.5 py-px text-[11px] font-medium text-gray-600" title="Аккаунт в «Доходах»"><span className={`w-1.5 h-1.5 rounded-full ${acc.dot}`} />{acc.label}</span>}
     </>
   ) : <span className="text-gray-400">— без авто —</span>
 }
@@ -88,13 +93,29 @@ export default function ClaimsView() {
   // Окно суммы Initial / Supplement (сумма сразу попадает в «Доходы» машины)
   const [pay, setPay] = useState<{ c: Claim; kind: ClaimKind; amount: string; pct: string; month: string; busy: boolean; error: string } | null>(null)
   const access = useAccess()
+  const [carAcc, setCarAcc] = useState<Record<string, CarAccount>>({})
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [claimsRes, carsRes] = await Promise.all([
+    const [claimsRes, carsRes, rcRes, accRes] = await Promise.all([
       supabase.from('claims').select('*, car:cars(*)').order('opened_date', { ascending: true }),
       supabase.from('cars').select('*').order('make'),
+      // Аккаунты «Доходов» (без доступа к «Доходам» запрос вернёт ошибку — тогда аккаунт просто не показываем)
+      supabase.from('revenue_cars').select('car_id, account, added_from, sold_from').not('car_id', 'is', null),
+      supabase.from('revenue_accounts').select('key, label').order('sort'),
     ])
+    const accs = (accRes.data || []) as { key: string; label: string }[]
+    const now = format(new Date(), 'yyyy-MM-01')
+    const map: Record<string, CarAccount> = {}
+    // Сначала старые записи, потом те, что числятся в текущем месяце, — они перезаписывают
+    const rcs = ((rcRes.data || []) as { car_id: string; account: string; added_from: string; sold_from: string | null }[])
+      .map(rc => ({ rc, cur: rc.added_from <= now && (!rc.sold_from || now < rc.sold_from) }))
+      .sort((a, b) => Number(a.cur) - Number(b.cur) || a.rc.added_from.localeCompare(b.rc.added_from))
+    for (const { rc } of rcs) {
+      const i = accs.findIndex(a => a.key === rc.account)
+      if (i >= 0) map[rc.car_id] = { label: accs[i].label, dot: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length].dot }
+    }
+    setCarAcc(map)
     setClaims((claimsRes.data as Claim[]) || [])
     setCars(carsRes.data || [])
     setLoading(false)
@@ -246,7 +267,7 @@ export default function ClaimsView() {
       <div className="px-4 py-3">
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
           <div className="flex-1 min-w-[180px]">
-            <p className="text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+            <p className="text-sm text-gray-700 truncate"><CarTitle c={c} acc={c.car_id ? carAcc[c.car_id] : null} /></p>
             {(c.claim_number || c.description) && (
               <p className="text-xs text-gray-600 truncate">
                 {c.claim_number && <span className="font-mono font-semibold text-[#4F46E5] dark:text-indigo-300">№ {c.claim_number}</span>}
@@ -342,7 +363,7 @@ export default function ClaimsView() {
                 <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                   <Check size={14} className="text-green-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-700 truncate"><CarTitle c={c} /></p>
+                    <p className="text-sm text-gray-700 truncate"><CarTitle c={c} acc={c.car_id ? carAcc[c.car_id] : null} /></p>
                     <p className="text-xs text-gray-500 truncate">{c.claim_number && <span className="font-mono font-semibold">№ {c.claim_number} · </span>}завершён {c.completed_date ? short(c.completed_date) : '—'}{c.description ? ` · ${c.description}` : ''}</p>
                   </div>
                   <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
@@ -380,7 +401,7 @@ export default function ClaimsView() {
                 {done.map(c => (
                   <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                     <Check size={14} className="text-green-500 flex-shrink-0" />
-                    <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} />{c.claim_number && <span className="ml-1.5 font-mono text-xs text-gray-400">№ {c.claim_number}</span>}</p>
+                    <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} acc={c.car_id ? carAcc[c.car_id] : null} />{c.claim_number && <span className="ml-1.5 font-mono text-xs text-gray-400">№ {c.claim_number}</span>}</p>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
                       завершён {c.completed_date ? short(c.completed_date) : '—'}
                     </span>
@@ -482,7 +503,7 @@ export default function ClaimsView() {
           <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
             <div>
               <h2 className="text-lg font-bold text-gray-900">{pay.kind === 'initial' ? 'Initial получен' : 'Supplement получен'}</h2>
-              <p className="text-sm text-gray-500"><CarTitle c={pay.c} />{pay.c.claim_number ? ` · № ${pay.c.claim_number}` : ''}</p>
+              <p className="text-sm text-gray-500"><CarTitle c={pay.c} acc={pay.c.car_id ? carAcc[pay.c.car_id] : null} />{pay.c.claim_number ? ` · № ${pay.c.claim_number}` : ''}</p>
             </div>
             <div className={pay.kind === 'supplement' ? 'grid grid-cols-[1fr_110px] gap-3' : ''}>
               <label className="block">
