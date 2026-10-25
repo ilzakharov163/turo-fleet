@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
 import { Plus, X, Pencil, ChevronLeft, ChevronRight, Check, StickyNote, Search } from 'lucide-react'
-import { format, parseISO, startOfMonth, addMonths, subMonths, isSameMonth } from 'date-fns'
+import { format, parseISO, startOfMonth, addMonths, subMonths, subDays, isSameMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { ask, notify } from '@/lib/ui'
@@ -69,6 +69,7 @@ function doneDate(c: Claim): string | null {
 
 // Аккаунт «Доходов», на котором машина (имя и цвет точки как в «Доходах»)
 interface CarAccount { label: string; dot: string }
+interface Block { id: string; start_date: string; end_date: string | null; reason: string | null }
 
 function CarTitle({ c, acc }: { c: Claim; acc?: CarAccount | null }) {
   return c.car ? (
@@ -94,6 +95,8 @@ export default function ClaimsView() {
   const [pay, setPay] = useState<{ c: Claim; kind: ClaimKind; amount: string; pct: string; month: string; busy: boolean; error: string } | null>(null)
   const access = useAccess()
   const [carAcc, setCarAcc] = useState<Record<string, CarAccount>>({})
+  // «Завершить»: клейм завершается, машина возвращается в работу (закрывается её текущий простой)
+  const [finish, setFinish] = useState<{ c: Claim; date: string; back: boolean; block: Block | null; busy: boolean } | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -236,6 +239,52 @@ export default function ClaimsView() {
   }
 
 
+  // Текущий простой машины на дату: сначала тот, где в причине номер этого клейма
+  async function openBlockFor(c: Claim, date: string): Promise<Block | null> {
+    if (!c.car_id) return null
+    const { data } = await createClient().from('car_blocks').select('id, start_date, end_date, reason').eq('car_id', c.car_id)
+      .lte('start_date', date).or(`end_date.is.null,end_date.gte.${date}`)
+    const list = (data || []) as Block[]
+    const num = c.claim_number?.trim().toLowerCase()
+    return list.find(b => num && (b.reason || '').toLowerCase().includes(num)) || list[0] || null
+  }
+
+  async function openFinish(c: Claim) {
+    const date = today()
+    setFinish({ c, date, back: true, block: await openBlockFor(c, date), busy: false })
+  }
+
+  async function changeFinishDate(date: string) {
+    if (!finish || !date) return
+    const block = await openBlockFor(finish.c, date)
+    setFinish(f => f && { ...f, date, block })
+  }
+
+  async function saveFinish() {
+    if (!finish) return
+    const { c, date, back, block } = finish
+    setFinish({ ...finish, busy: true })
+    const supabase = createClient()
+    const update = { status: 'done' as const, completed_date: date, ...(back && block ? { still_listed: true } : {}) }
+    const { error } = await supabase.from('claims').update(update).eq('id', c.id)
+    if (error) { setFinish({ ...finish, busy: false }); return }
+    await log('update', 'claim', c.id, update)
+    if (back && block && c.car_id) {
+      // В работе с выбранной даты: простой заканчивается накануне (начался в тот же день — простоя не было)
+      const dayBefore = format(subDays(parseISO(date), 1), 'yyyy-MM-dd')
+      const res = block.start_date >= date
+        ? await supabase.from('car_blocks').delete().eq('id', block.id)
+        : await supabase.from('car_blocks').update({ end_date: dayBefore }).eq('id', block.id)
+      if (!res.error) {
+        await supabase.from('cars').update({ status: 'active', inactive_reason: null, updated_at: new Date().toISOString() }).eq('id', c.car_id)
+        await log('status_change', 'car', c.car_id, { status: 'active', from_claim: c.id, block_id: block.id, end_date: block.start_date >= date ? null : dayBefore })
+      }
+    }
+    notify(back && block ? `Клейм завершён, машина в работе с ${format(parseISO(date), 'd MMMM', { locale: ru })}` : 'Клейм завершён', 'success')
+    setFinish(null)
+    load()
+  }
+
   async function setStatus(c: Claim, status: Claim['status']) {
     const supabase = createClient()
     const update = { status, completed_date: status === 'done' ? today() : null }
@@ -304,7 +353,7 @@ export default function ClaimsView() {
             {c.status === 'waiting' ? (
               <button onClick={() => setStatus(c, 'in_repair')} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 whitespace-nowrap">→ В ремонт</button>
             ) : (
-              <button onClick={() => setStatus(c, 'done')} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 whitespace-nowrap">→ Завершить</button>
+              <button onClick={() => openFinish(c)} className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-green-50 text-green-600 border border-green-100 hover:bg-green-100 whitespace-nowrap">→ Завершить</button>
             )}
             <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={14} /></button>
           </div>
@@ -364,7 +413,7 @@ export default function ClaimsView() {
                   <Check size={14} className="text-green-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-700 truncate"><CarTitle c={c} acc={c.car_id ? carAcc[c.car_id] : null} /></p>
-                    <p className="text-xs text-gray-500 truncate">{c.claim_number && <span className="font-mono font-semibold">№ {c.claim_number} · </span>}завершён {c.completed_date ? short(c.completed_date) : '—'}{c.description ? ` · ${c.description}` : ''}</p>
+                    <p className="text-xs text-gray-500 truncate">{c.claim_number && <span className="font-mono font-semibold">№ {c.claim_number} · </span>}{c.opened_date ? `открыт ${short(c.opened_date)} → ` : ''}завершён {c.completed_date ? short(c.completed_date) : '—'}{c.description ? ` · ${c.description}` : ''}</p>
                   </div>
                   <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
                 </div>
@@ -403,7 +452,7 @@ export default function ClaimsView() {
                     <Check size={14} className="text-green-500 flex-shrink-0" />
                     <p className="flex-1 min-w-0 text-sm text-gray-700 truncate"><CarTitle c={c} acc={c.car_id ? carAcc[c.car_id] : null} />{c.claim_number && <span className="ml-1.5 font-mono text-xs text-gray-400">№ {c.claim_number}</span>}</p>
                     <span className="text-xs text-gray-500 whitespace-nowrap">
-                      завершён {c.completed_date ? short(c.completed_date) : '—'}
+                      {c.opened_date ? `${short(c.opened_date)} → ` : ''}завершён {c.completed_date ? short(c.completed_date) : '—'}
                     </span>
                     <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600" title="Редактировать"><Pencil size={13} /></button>
                   </div>
@@ -495,6 +544,35 @@ export default function ClaimsView() {
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 btn-secondary h-11">Отмена</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {finish && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={e => { if (e.target === e.currentTarget && !finish.busy) setFinish(null) }}>
+          <div className="bg-white rounded-t-[22px] sm:rounded-[20px] shadow-2xl p-5 sm:p-6 w-full max-w-sm space-y-4 animate-in" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Завершить клейм</h2>
+              <p className="text-sm text-gray-500"><CarTitle c={finish.c} acc={finish.c.car_id ? carAcc[finish.c.car_id] : null} />{finish.c.claim_number ? ` · № ${finish.c.claim_number}` : ''}</p>
+            </div>
+            <label className="block">
+              <span className="block text-sm font-medium text-gray-700 mb-1">Дата завершения (машина в работе с этого дня)</span>
+              <DatePicker value={finish.date} onChange={changeFinishDate} />
+            </label>
+            {finish.block ? (
+              <label className="flex items-start gap-2.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-500/10 p-3 cursor-pointer">
+                <input type="checkbox" checked={finish.back} onChange={e => setFinish({ ...finish, back: e.target.checked })} className="mt-0.5 w-4 h-4 accent-emerald-600" />
+                <span className="text-sm text-gray-700">
+                  <b className="text-gray-900">Вернуть машину в работу</b>
+                  <span className="block text-xs text-gray-500 mt-0.5">Простой с {short(finish.block.start_date)}{finish.block.reason ? ` (${finish.block.reason})` : ''} {finish.block.start_date >= finish.date ? 'удалится — он начался в этот же день' : `закончится ${short(format(subDays(parseISO(finish.date), 1), 'yyyy-MM-dd'))}`}</span>
+                </span>
+              </label>
+            ) : finish.c.car_id ? (
+              <p className="text-xs text-gray-500">Машина на эту дату не в простое — завершится только клейм.</p>
+            ) : null}
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={() => setFinish(null)} disabled={finish.busy} className="btn-secondary flex-1 h-11">Отмена</button>
+              <button type="button" onClick={saveFinish} disabled={finish.busy || !finish.date} className="btn-primary flex-1 h-11">{finish.busy ? 'Сохраняю…' : 'Завершить'}</button>
+            </div>
           </div>
         </div>
       )}
