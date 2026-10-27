@@ -10,6 +10,7 @@ import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { ask, notify } from '@/lib/ui'
 import { canAny, useAccess } from '@/lib/access'
+import { unlistByClaim } from '@/lib/unlist'
 import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
 import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
@@ -86,6 +87,9 @@ export default function ClaimsView() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editClaim, setEditClaim] = useState<Claim | null>(null)
+  // Снять с листинга из карточки клейма (машина каталась с открытым клеймом)
+  const [unlistDate, setUnlistDate] = useState('')
+  const [unlistBusy, setUnlistBusy] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [month, setMonth] = useState<Date>(() => startOfMonth(new Date()))
   const [openNotes, setOpenNotes] = useState<string | null>(null)
@@ -136,6 +140,7 @@ export default function ClaimsView() {
 
   function openEdit(c: Claim) {
     setEditClaim(c)
+    setUnlistDate(today())
     setForm({
       car_id: c.car_id || '',
       status: c.status,
@@ -179,6 +184,18 @@ export default function ClaimsView() {
       if (data) await log('create', 'claim', data.id, payload)
     }
     setShowModal(false)
+    load()
+  }
+
+  async function unlistFromClaim() {
+    if (!editClaim?.car_id || !unlistDate) return
+    setUnlistBusy(true)
+    const ok = await unlistByClaim({ carId: editClaim.car_id, claimId: editClaim.id, claimNumber: form.claim_number.trim() || editClaim.claim_number, description: form.description.trim() || editClaim.description, date: unlistDate })
+    setUnlistBusy(false)
+    if (!ok) return
+    setEditClaim({ ...editClaim, still_listed: false })
+    setForm(f => ({ ...f, still_listed: false }))
+    notify(`Машина снята с листинга с ${format(parseISO(unlistDate), 'd MMMM', { locale: ru })}`, 'success')
     load()
   }
 
@@ -325,7 +342,7 @@ export default function ClaimsView() {
             )}
             <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
               {c.opened_date ? `открыт ${short(c.opened_date)}` : 'дата не указана'}
-              {c.still_listed && <span className="text-purple-500">· листинг активен</span>}
+              {c.still_listed && <button type="button" onClick={() => openEdit(c)} className="text-purple-500 hover:underline" title="Снять с листинга">· листинг активен</button>}
               {c.notes && (
                 <button onClick={() => setOpenNotes(notesOpen ? null : c.id)} className="inline-flex items-center gap-0.5 text-gray-400 hover:text-gray-600">
                   · <StickyNote size={11} /> заметка
@@ -526,10 +543,25 @@ export default function ClaimsView() {
                     <input type="checkbox" checked={form.supplement_paid} onChange={e => setForm(f => ({ ...f, supplement_paid: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
                     <span className="text-sm text-gray-700">Supplement оплачен</span>
                   </label>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox" checked={form.still_listed} onChange={e => setForm(f => ({ ...f, still_listed: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                    <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб)</span>
-                  </label>
+                  {editClaim && editClaim.car_id && editClaim.status !== 'done' ? (
+                    editClaim.still_listed ? (
+                      <div className="rounded-2xl border border-purple-100 bg-purple-50/60 dark:bg-purple-500/10 p-3 space-y-2">
+                        <p className="text-sm text-gray-700"><b className="text-gray-900">Машина ещё в листинге</b> — катается с открытым клеймом. Когда уходит на supplement / ремонт, снимите её:</p>
+                        <div className="flex gap-2 items-center">
+                          <div className="flex-1 min-w-0"><DatePicker value={unlistDate} onChange={setUnlistDate} /></div>
+                          <button type="button" onClick={unlistFromClaim} disabled={unlistBusy || !unlistDate} className="h-11 px-3 rounded-[10px] bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 whitespace-nowrap">{unlistBusy ? 'Снимаю…' : 'Снять с листинга'}</button>
+                        </div>
+                        <p className="text-xs text-gray-500">Машина будет в простое с этой даты («Клейм № …»). Вернётся в работу кнопкой «Завершить».</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">Машина снята с листинга — вернётся в работу кнопкой «Завершить».</p>
+                    )
+                  ) : (
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="checkbox" checked={form.still_listed} onChange={e => setForm(f => ({ ...f, still_listed: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
+                      <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб)</span>
+                    </label>
+                  )}
                 </div>
               )}
               <div>

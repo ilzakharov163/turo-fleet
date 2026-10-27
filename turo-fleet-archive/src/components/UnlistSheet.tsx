@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { notify } from '@/lib/ui'
+import { unlistByClaim } from '@/lib/unlist'
 import { Modal, FormField, inputCls, ModalActions, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
 import { Car } from '@/types'
@@ -39,9 +40,23 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
     const desc = description.trim()
 
     if (reason === 'claim') {
-      // Такой номер уже есть?
-      const { data: dup } = await supabase.from('claims').select('id').ilike('claim_number', num.replace(/[%_\\]/g, m => `\\${m}`)).limit(1)
-      if (dup?.length) { setBusy(false); setError(`Клейм № ${num} уже есть в разделе «Клеймы»`); return }
+      // Такой номер уже есть? Открытый клейм этой же машины (она каталась с клеймом) — снимаем по нему
+      const { data: dup } = await supabase.from('claims').select('id, car_id, status, description, claim_number').ilike('claim_number', num.replace(/[%_\\]/g, m => `\\${m}`)).limit(1)
+      const ex = dup?.[0]
+      if (ex && (ex.car_id !== car.id || ex.status === 'done')) {
+        setBusy(false)
+        setError(ex.car_id !== car.id ? `Клейм № ${num} уже есть у другой машины` : `Клейм № ${num} уже завершён`)
+        return
+      }
+      if (ex) {
+        const ok = await unlistByClaim({ carId: car.id, claimId: ex.id, claimNumber: ex.claim_number || num, description: desc || ex.description, date, endDate: endDate || null })
+        if (desc && !ex.description) await supabase.from('claims').update({ description: desc }).eq('id', ex.id)
+        setBusy(false)
+        if (!ok) return
+        notify(`Машина в простое по клейму № ${ex.claim_number || num}`, 'success')
+        onDone()
+        return
+      }
       const { data, error } = await supabase.from('claims').insert({
         car_id: car.id, status: 'waiting', opened_date: date, claim_number: num, description: desc || null, still_listed: false,
       }).select('id').single()
@@ -90,7 +105,7 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
             <FormField label="Что случилось (коротко)">
               <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Например, бампер и фара после ДТП" className={inputCls} />
             </FormField>
-            <p className="text-xs text-gray-500">Клейм сразу появится в «Авто → Клеймы» со статусом «Ожидает ремонта», а машина будет в простое с этой даты. «По» обычно оставьте пустым — вернёте в работу, когда починят.</p>
+            <p className="text-xs text-gray-500">Клейм сразу появится в «Авто → Клеймы» со статусом «Ожидает ремонта», а машина будет в простое с этой даты. Если клейм уже открыт (машина каталась с ним) — введите его номер, машина снимется по нему. «По» обычно оставьте пустым — вернёте в работу, когда починят.</p>
           </>
         ) : (
           <FormField label="Причина *">
