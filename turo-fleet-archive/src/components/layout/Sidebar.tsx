@@ -43,7 +43,8 @@ export default function Sidebar() {
     router.push('/login')
   }
 
-  const visibleNav = !access ? nav : nav.filter(n => canAny(access, n.access))
+  // Пока права грузятся — меню пустое, чтобы не мелькали чужие разделы
+  const visibleNav = !access ? [] : nav.filter(n => canAny(access, n.access))
   const preferred = visibleNav.filter(n => MOBILE_MAIN.includes(n.href))
   const mobileMain = [...preferred, ...visibleNav.filter(n => !MOBILE_MAIN.includes(n.href))].slice(0, 4)
   const mobileMore = visibleNav.filter(n => !mobileMain.includes(n))

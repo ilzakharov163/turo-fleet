@@ -191,7 +191,7 @@ export default function DashboardPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data: prof } = await supabase.from('profiles').select('role, permissions').eq('id', user.id).single()
-      const role = (prof?.role ?? 'admin') as string
+      const role = (prof?.role ?? 'employee') as string
       if (role !== 'admin' && !((prof?.permissions as string[] | null) ?? []).includes('/income')) return
 
       const [entRes, expRes, payRes, dedRes2] = await Promise.all([

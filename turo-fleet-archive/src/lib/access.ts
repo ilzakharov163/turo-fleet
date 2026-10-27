@@ -25,7 +25,8 @@ export function useAccess() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       const { data } = await supabase.from('profiles').select('role, permissions').eq('id', user.id).single()
-      const role = (data?.role ?? 'admin') as string
+      // Профиль не загрузился — права как у сотрудника без галочек, не админа
+      const role = (data?.role ?? 'employee') as string
       let perms: string[] = (data?.permissions as string[] | null) ?? []
       if (role !== 'admin' && perms.length === 0) perms = ['/expenses']
       // Старая галочка «Календарь» = простои во вкладке «Авто»
