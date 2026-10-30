@@ -187,6 +187,12 @@ export default function ClaimsView() {
       const { data, error } = await supabase.from('claims').insert(payload).select().single()
       if (error) { return }
       if (data) await log('create', 'claim', data.id, payload)
+      // Галочка «остаётся в листинге» снята — машина сразу в простое с даты открытия клейма
+      if (data && payload.car_id && !payload.still_listed && payload.status !== 'done') {
+        const from = payload.opened_date || today()
+        const ok = await unlistByClaim({ carId: payload.car_id, claimId: data.id, claimNumber: payload.claim_number, description: payload.description, date: from })
+        if (ok) notify(`Машина в простое с ${format(parseISO(from), 'd MMMM', { locale: ru })}`, 'success')
+      }
     }
     setShowModal(false)
     load()
@@ -572,7 +578,7 @@ export default function ClaimsView() {
                   ) : (
                     <label className="flex items-center gap-3 cursor-pointer">
                       <input type="checkbox" checked={form.still_listed} onChange={e => setForm(f => ({ ...f, still_listed: e.target.checked }))} className="w-4 h-4 rounded accent-blue-600" />
-                      <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб)</span>
+                      <span className="text-sm text-gray-700">Машина остаётся в листинге (мелкий ущерб){!form.still_listed && form.car_id && <span className="block text-xs text-gray-500">Без галочки машина сразу уйдёт в простой с даты «Открыт»</span>}</span>
                     </label>
                   )}
                 </div>
