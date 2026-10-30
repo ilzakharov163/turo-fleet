@@ -11,6 +11,8 @@ import DatePicker from '@/components/ui/DatePicker'
 import { ask, notify } from '@/lib/ui'
 import { canAny, useAccess } from '@/lib/access'
 import { unlistByClaim } from '@/lib/unlist'
+import { loadPlateHistory, normPlate, oldPlatesByCar } from '@/lib/plates'
+import PlateHistory from '@/components/PlateHistory'
 import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
 import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
@@ -99,6 +101,8 @@ export default function ClaimsView() {
   const [pay, setPay] = useState<{ c: Claim; kind: ClaimKind; amount: string; pct: string; month: string; busy: boolean; error: string } | null>(null)
   const access = useAccess()
   const [carAcc, setCarAcc] = useState<Record<string, CarAccount>>({})
+  // Прежние номера машин (car_id → старые номера) — для поиска и выбора машины по старому номеру
+  const [oldPlates, setOldPlates] = useState<Record<string, string[]>>({})
   // «Завершить»: клейм завершается, машина возвращается в работу (закрывается её текущий простой)
   const [finish, setFinish] = useState<{ c: Claim; date: string; back: boolean; block: Block | null; busy: boolean } | null>(null)
 
@@ -123,6 +127,7 @@ export default function ClaimsView() {
       if (i >= 0) map[rc.car_id] = { label: accs[i].label, dot: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length].dot }
     }
     setCarAcc(map)
+    setOldPlates(oldPlatesByCar(await loadPlateHistory()))
     setClaims((claimsRes.data as Claim[]) || [])
     setCars(carsRes.data || [])
     setLoading(false)
@@ -312,7 +317,9 @@ export default function ClaimsView() {
   }
 
   const q = query.trim().toLowerCase()
+  const nq = normPlate(query)
   const matches = (c: Claim) => !q || [c.claim_number, c.description, c.notes, c.car ? `${c.car.make} ${c.car.model} ${c.car.plate}` : ''].some(v => (v || '').toLowerCase().includes(q))
+    || (!!nq && !!c.car_id && [c.car?.plate, ...(oldPlates[c.car_id] || [])].some(p => normPlate(p).includes(nq)))
   const found = q ? claims.filter(matches).sort((a, b) => (b.opened_date || b.created_at).localeCompare(a.opened_date || a.created_at)) : []
   const waiting = claims.filter(c => c.status === 'waiting')
   const inRepair = claims.filter(c => c.status === 'in_repair')
@@ -407,15 +414,18 @@ export default function ClaimsView() {
             {loading ? 'Загрузка…' : `${waiting.length} ждут ремонта · ${inRepair.length} в ремонте`}
           </p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 btn-primary px-4 h-10">
-          <Plus size={16} /> Добавить клейм
-        </button>
+        <div className="flex items-center gap-3">
+          <PlateHistory cars={cars} className="hidden sm:inline-flex" />
+          <button onClick={openAdd} className="flex items-center gap-2 btn-primary px-4 h-10">
+            <Plus size={16} /> Добавить клейм
+          </button>
+        </div>
       </div>
 
       {/* Поиск по номеру клейма, машине, описанию */}
       <div className="relative">
         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск: номер клейма, машина, описание…"
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск: номер клейма, машина (и старый номер), описание…"
           className="w-full h-11 pl-9 pr-9 text-base sm:text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400" />
         {query && <button onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" aria-label="Очистить"><X size={15} /></button>}
       </div>
@@ -500,10 +510,13 @@ export default function ClaimsView() {
               </div>
               {formError && <p className="text-sm text-red-600 -mt-2">{formError}</p>}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Авто</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">Авто</label>
+                  <PlateHistory cars={cars} onPick={id => setForm(f => ({ ...f, car_id: id }))} label="Не помню номер" className="text-xs" />
+                </div>
                 <select value={form.car_id} onChange={e => setForm(f => ({ ...f, car_id: e.target.value }))} className={inputCls}>
                   <option value="">Выберите авто</option>
-                  {cars.filter(c => inFleet(c, format(new Date(), 'yyyy-MM-01'))).map(c => (<option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}</option>))}
+                  {cars.filter(c => inFleet(c, format(new Date(), 'yyyy-MM-01'))).map(c => (<option key={c.id} value={c.id}>{c.make} {c.model} {c.plate}{oldPlates[c.id]?.length ? ` (был ${oldPlates[c.id].join(', ')})` : ''}</option>))}
                 </select>
               </div>
               <div>

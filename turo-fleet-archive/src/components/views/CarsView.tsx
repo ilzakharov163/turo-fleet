@@ -9,6 +9,7 @@ import { Card, Modal, FormField, inputCls, ModalActions, SaveButton, CancelButto
 import DatePicker from '@/components/ui/DatePicker'
 import CarCard from '@/components/CarCard'
 import UnlistSheet from '@/components/UnlistSheet'
+import PlateHistory from '@/components/PlateHistory'
 import { restoreCar } from '@/lib/fleet'
 import { canAny, useAccess } from '@/lib/access'
 import { ask, notify } from '@/lib/ui'
@@ -71,6 +72,7 @@ export default function CarsView() {
     load()
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [])
 
   // Статус машины — только по простоям: в простое, если сегодня попадает в простой
@@ -236,6 +238,7 @@ export default function CarsView() {
               className="w-full pl-9 pr-4 py-2 text-base sm:text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400"
             />
           </div>
+          <div className="mt-2 flex justify-end"><PlateHistory cars={cars} /></div>
           {searchResults.length > 0 && (
             <div className="absolute left-4 right-4 sm:left-6 sm:right-6 top-full mt-1 bg-white rounded-[14px] border border-gray-100 py-1.5 z-50"
               style={{ boxShadow: '0 8px 28px rgba(17,17,26,0.12), 0 2px 8px rgba(17,17,26,0.06)' }}>
