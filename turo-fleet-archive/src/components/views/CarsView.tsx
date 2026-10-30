@@ -10,6 +10,7 @@ import DatePicker from '@/components/ui/DatePicker'
 import CarCard from '@/components/CarCard'
 import UnlistSheet from '@/components/UnlistSheet'
 import PlateHistory from '@/components/PlateHistory'
+import { hasCyrillic, latinPlate } from '@/lib/plates'
 import { restoreCar } from '@/lib/fleet'
 import { canAny, useAccess } from '@/lib/access'
 import { ask, notify } from '@/lib/ui'
@@ -86,6 +87,7 @@ export default function CarsView() {
     if (!f.make.trim()) errors.make = 'Введите марку'
     if (!f.model.trim()) errors.model = 'Введите модель'
     if (!f.plate.trim()) errors.plate = 'Введите номер'
+    else if (hasCyrillic(f.plate)) errors.plate = 'Номер латиницей — переключите раскладку на английскую'
     return errors
   }
 
@@ -424,7 +426,7 @@ export default function CarsView() {
             <FormField label="Номер">
               <input
                 value={form.plate}
-                onChange={e => { setForm(f => ({ ...f, plate: e.target.value.toUpperCase() })); setFormErrors(p => ({ ...p, plate: '' })) }}
+                onChange={e => { setForm(f => ({ ...f, plate: latinPlate(e.target.value) })); setFormErrors(p => ({ ...p, plate: '' })) }}
                 placeholder="9TWL415"
                 className={inputCls}
                 style={{ textTransform: 'uppercase' }}

@@ -26,3 +26,9 @@ export function oldPlatesByCar(list: PlateChange[]): Record<string, string[]> {
   for (const x of list) (m[x.car_id] ||= []).push(x.old_plate)
   return m
 }
+
+// Номер при вводе: заглавные, русские буквы-двойники сразу в латиницу (527АКР1 → 527AKP1)
+export const latinPlate = (s: string) => s.toUpperCase().replace(/[АВЕКМНОРСТУХ]/g, ch => LOOKALIKE[ch] || ch)
+
+// Остались русские буквы без латинского двойника (Д, Б, Ж…) — такой номер не сохраняем
+export const hasCyrillic = (s: string) => /[А-ЯЁ]/i.test(s)

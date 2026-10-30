@@ -10,6 +10,7 @@ import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { notify, ask } from '@/lib/ui'
 import { inFleet } from '@/lib/calc'
+import { hasCyrillic, latinPlate } from '@/lib/plates'
 
 // Наклейки меняем раз в полтора месяца
 const INTERVAL_DAYS = 45
@@ -113,6 +114,7 @@ export default function StickersView() {
     setLoading(false)
   }, [])
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [load])
 
   const now = new Date()
@@ -205,7 +207,8 @@ export default function StickersView() {
   async function handleCustomDate(e: React.FormEvent) {
     e.preventDefault()
     if (!dateFor || !customDate || saving) return
-    const plate = newPlate.trim().toUpperCase().replace(/\s+/g, '')
+    const plate = latinPlate(newPlate.trim()).replace(/\s+/g, '')
+    if (hasCyrillic(plate)) { notify('Номер латиницей — переключите раскладку на английскую', 'error'); return }
     setSaving(true)
     const ok = await recordChange(dateFor.entry.car_id, customDate, dateFor.entry.car?.plate ?? null, plate || null)
     setSaving(false)
@@ -404,7 +407,7 @@ export default function StickersView() {
                       id="new-plate"
                       autoFocus
                       value={newPlate}
-                      onChange={e => setNewPlate(e.target.value.toUpperCase())}
+                      onChange={e => setNewPlate(latinPlate(e.target.value))}
                       placeholder="Новый номер"
                       autoCapitalize="characters"
                       autoComplete="off"
