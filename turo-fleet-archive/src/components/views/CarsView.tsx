@@ -4,12 +4,14 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { log } from '@/lib/logger'
 import { Car, CarBlock } from '@/types'
-import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye, RotateCcw } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, Trash2, Edit2, Search, EyeOff, Eye, RotateCcw, ChevronDown, Check } from 'lucide-react'
 import { Card, Modal, FormField, inputCls, ModalActions, SaveButton, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
 import CarCard from '@/components/CarCard'
 import UnlistSheet from '@/components/UnlistSheet'
 import PlateHistory from '@/components/PlateHistory'
+import Popover from '@/components/ui/Popover'
+import { loadCarAccounts, type CarAccount } from '@/lib/carAccounts'
 import { hasCyrillic, latinPlate } from '@/lib/plates'
 import { restoreCar } from '@/lib/fleet'
 import { canAny, useAccess } from '@/lib/access'
@@ -43,13 +45,18 @@ export default function CarsView() {
   const [openCar, setOpenCar] = useState<Car | null>(null)
   const [unlistCar, setUnlistCar] = useState<Car | null>(null)
   const access = useAccess()
+  // Фильтр по аккаунту «Доходов» ('' — все)
+  const [accFilter, setAccFilter] = useState('')
+  const [carAcc, setCarAcc] = useState<{ accounts: CarAccount[]; byCar: Record<string, CarAccount> }>({ accounts: [], byCar: {} })
 
   async function load() {
     const supabase = createClient()
-    const [carsRes, blocksRes] = await Promise.all([
+    const [carsRes, blocksRes, accs] = await Promise.all([
       supabase.from('cars').select('*').order('make').order('model'),
       supabase.from('car_blocks').select('*').order('start_date', { ascending: false }),
+      loadCarAccounts(),
     ])
+    setCarAcc(accs)
     setCars(carsRes.data || [])
     setCarBlocks(blocksRes.data || [])
     setLoading(false)
@@ -195,7 +202,10 @@ export default function CarsView() {
   const leavingLabel = (c: Car) => c.removed_from && c.removed_from > curP ? `Уходит с ${format(parseISO(c.removed_from), 'MMMM', { locale: ru })}` : ''
   const inactiveCount = fleetCars.filter(c => idleOf(c.id)).length
   const activeCount = fleetCars.length - inactiveCount
-  const listCars = fleetCars.filter(c => filter === 'all' || (filter === 'idle') === !!idleOf(c.id))
+  const byStatus = fleetCars.filter(c => filter === 'all' || (filter === 'idle') === !!idleOf(c.id))
+  const listCars = byStatus.filter(c => !accFilter || (accFilter === '-' ? !carAcc.byCar[c.id] : carAcc.byCar[c.id]?.key === accFilter))
+  const accCount = (key: string) => byStatus.filter(c => key === '-' ? !carAcc.byCar[c.id] : carAcc.byCar[c.id]?.key === key).length
+  const accSel = carAcc.accounts.find(a => a.key === accFilter)
 
 
   return (
@@ -221,6 +231,36 @@ export default function CarsView() {
             {filter === 'all' ? 'Автомобили' : filter === 'work' ? 'В работе' : 'В простое'}
             {filter !== 'all' && <button onClick={() => setFilter('all')} className="ml-2 text-xs font-medium text-[#4F46E5] dark:text-indigo-300">показать все</button>}
           </h2>
+          {carAcc.accounts.length > 0 && (
+            <Popover panelClass="sm:w-72" className="mr-auto"
+              trigger={(open, toggle) => (
+                <button onClick={toggle} className={`inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors ${accFilter ? 'bg-indigo-50 border-indigo-200 text-[#4F46E5] dark:text-indigo-300' : 'bg-white border-gray-200 text-gray-600'} ${open ? 'ring-2 ring-indigo-400/20' : ''}`}>
+                  {accSel ? <span className={`w-2 h-2 rounded-full ${accSel.dot}`} /> : null}
+                  <span className="max-w-[110px] truncate">{accSel ? accSel.label : accFilter === '-' ? 'Без аккаунта' : 'Все аккаунты'}</span>
+                  <ChevronDown size={13} className="text-gray-400" />
+                </button>
+              )}>
+              {close => (
+                <div className="p-2">
+                  <p className="px-2 pt-1 pb-2 text-sm font-semibold text-gray-900">Аккаунт</p>
+                  {[{ key: '', label: 'Все аккаунты', dot: '' }, ...carAcc.accounts, { key: '-', label: 'Без аккаунта', dot: 'bg-gray-300' }].map(a => {
+                    const n = a.key ? accCount(a.key) : byStatus.length
+                    // Аккаунты и «Без аккаунта», где в парке нет машин, не показываем
+                    if (a.key && !fleetCars.some(c => a.key === '-' ? !carAcc.byCar[c.id] : carAcc.byCar[c.id]?.key === a.key)) return null
+                    return (
+                      <button key={a.key || 'all'} onClick={() => { setAccFilter(a.key); close() }}
+                        className={`w-full flex items-center gap-3 px-2 py-2.5 rounded-xl text-left ${accFilter === a.key ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                        <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${a.dot || 'border border-gray-300'}`} />
+                        <span className="flex-1 min-w-0 truncate text-sm text-gray-800">{a.label}</span>
+                        <span className="text-xs tabular-nums text-gray-400">{n}</span>
+                        {accFilter === a.key && <Check size={14} className="text-[#4F46E5]" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </Popover>
+          )}
           <button
             onClick={() => { setShowAdd(true); setForm({ make: '', model: '', plate: '', owner_group: 'main' }); setFormErrors({}) }}
             className="btn-primary flex items-center gap-2 px-4 py-2"

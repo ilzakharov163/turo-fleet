@@ -16,7 +16,7 @@ import PlateHistory from '@/components/PlateHistory'
 import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
 import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
-import { ACCOUNT_COLORS } from '@/lib/accountColors'
+import { loadCarAccounts, type CarAccount } from '@/lib/carAccounts'
 import { inputCls } from '@/components/ui/PageShell'
 
 interface Claim {
@@ -70,8 +70,6 @@ function doneDate(c: Claim): string | null {
   return c.completed_date || c.opened_date || c.created_at || null
 }
 
-// Аккаунт «Доходов», на котором машина (имя и цвет точки как в «Доходах»)
-interface CarAccount { label: string; dot: string }
 interface Block { id: string; start_date: string; end_date: string | null; reason: string | null }
 
 function CarTitle({ c, acc }: { c: Claim; acc?: CarAccount | null }) {
@@ -108,25 +106,12 @@ export default function ClaimsView() {
 
   const load = useCallback(async () => {
     const supabase = createClient()
-    const [claimsRes, carsRes, rcRes, accRes] = await Promise.all([
+    const [claimsRes, carsRes, accs] = await Promise.all([
       supabase.from('claims').select('*, car:cars(*)').order('opened_date', { ascending: true }),
       supabase.from('cars').select('*').order('make'),
-      // Аккаунты «Доходов» (без доступа к «Доходам» запрос вернёт ошибку — тогда аккаунт просто не показываем)
-      supabase.from('revenue_cars').select('car_id, account, added_from, sold_from').not('car_id', 'is', null),
-      supabase.from('revenue_accounts').select('key, label').order('sort'),
+      loadCarAccounts(),
     ])
-    const accs = (accRes.data || []) as { key: string; label: string }[]
-    const now = format(new Date(), 'yyyy-MM-01')
-    const map: Record<string, CarAccount> = {}
-    // Сначала старые записи, потом те, что числятся в текущем месяце, — они перезаписывают
-    const rcs = ((rcRes.data || []) as { car_id: string; account: string; added_from: string; sold_from: string | null }[])
-      .map(rc => ({ rc, cur: rc.added_from <= now && (!rc.sold_from || now < rc.sold_from) }))
-      .sort((a, b) => Number(a.cur) - Number(b.cur) || a.rc.added_from.localeCompare(b.rc.added_from))
-    for (const { rc } of rcs) {
-      const i = accs.findIndex(a => a.key === rc.account)
-      if (i >= 0) map[rc.car_id] = { label: accs[i].label, dot: ACCOUNT_COLORS[i % ACCOUNT_COLORS.length].dot }
-    }
-    setCarAcc(map)
+    setCarAcc(accs.byCar)
     setOldPlates(oldPlatesByCar(await loadPlateHistory()))
     setClaims((claimsRes.data as Claim[]) || [])
     setCars(carsRes.data || [])
