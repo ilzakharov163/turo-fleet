@@ -4,6 +4,8 @@ import { logAs } from '../core'
 import { allowed, fleetText, loadFleet, type AgentTool, type Input, type Photo, type ToolCtx } from './tools'
 import { READ_TOOLS } from './tools-read'
 import { WRITE_TOOLS } from './tools-write'
+import { FLEET_TOOLS } from './tools-fleet'
+import { INCOME_TOOLS } from './tools-income'
 import { BOOKKEEPER_SYSTEM, contextBlock } from './prompt'
 import { todayLA, type Actor } from './server'
 
@@ -12,7 +14,7 @@ import { todayLA, type Actor } from './server'
 
 export const MODEL = 'claude-opus-5-5'
 const MAX_STEPS = 8
-const ALL_TOOLS: AgentTool[] = [...READ_TOOLS, ...WRITE_TOOLS]
+const ALL_TOOLS: AgentTool[] = [...READ_TOOLS, ...WRITE_TOOLS, ...FLEET_TOOLS, ...INCOME_TOOLS]
 
 export const toolByName = (name: string) => ALL_TOOLS.find(t => t.def.name === name)
 

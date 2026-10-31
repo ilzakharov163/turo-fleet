@@ -25,6 +25,15 @@ const TOOL_LABELS: Record<string, string> = {
   set_car_payment: 'Подготовил платёж за машину', set_expense_paid: 'Подготовил отметку оплаты', delete_expense: 'Подготовил удаление расхода',
   remove_car: 'Подготовил «продана/разбита»', list_claims: 'Посмотрел клеймы', list_expenses: 'Посмотрел расходы',
   list_downtime: 'Посмотрел простои', income_summary: 'Посмотрел доходы', salary_summary: 'Посчитал зарплату',
+  add_car: 'Подготовил новую машину', update_car: 'Подготовил правку машины', list_removed_cars: 'Посмотрел убранные машины',
+  restore_car: 'Подготовил возврат машины', stickers_status: 'Посмотрел наклейки', replace_sticker: 'Подготовил замену наклейки',
+  update_downtime: 'Подготовил правку простоя', delete_downtime: 'Подготовил удаление простоя', delete_claim: 'Подготовил удаление клейма',
+  undo_claim_payment: 'Подготовил снятие выплаты', update_expense: 'Подготовил правку расхода', delete_deduction: 'Подготовил удаление вычета',
+  income_car: 'Посмотрел доходы машины', month_costs: 'Посмотрел расходы месяца', income_history: 'Посмотрел прибыль по месяцам',
+  set_repair: 'Подготовил ремонт', add_car_other: 'Подготовил «Прочее»', remove_car_other: 'Подготовил удаление «Прочего»',
+  set_staff_costs: 'Подготовил затраты на сотрудника', add_company_expense: 'Подготовил расход компании', remove_company_expense: 'Подготовил удаление расхода компании',
+  add_payment: 'Подготовил платёж', update_payment: 'Подготовил правку платежа', delete_payment: 'Подготовил удаление платежа',
+  add_car_to_account: 'Подготовил перенос в аккаунт',
 }
 
 const STEP_ICON: Record<string, typeof Wrench> = { voice: Mic, photo: ImageIcon, tool: Wrench, confirm: Hand, write: CheckCircle2, error: AlertTriangle }
@@ -35,7 +44,7 @@ function stepText(s: Run['agent_steps'][number]) {
   if (s.kind === 'tool') {
     const [name, ...rest] = s.text.split(': ')
     // У чтения результат — служебная выгрузка (id записей), его не показываем; ответ человеку виден ниже
-    const result = /^(list_|income_|salary_)/.test(name) && !rest.join(': ').startsWith('Ошибка') ? '' : rest.join(': ')
+    const result = /^(list_|income_|salary_|month_costs|stickers_status)/.test(name) && !rest.join(': ').startsWith('Ошибка') ? '' : rest.join(': ')
     return `${TOOL_LABELS[name] || name}${result ? ` — ${result}` : ''}`
   }
   return s.text

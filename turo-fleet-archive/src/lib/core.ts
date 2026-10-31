@@ -36,6 +36,17 @@ export function canAny(access: Access | null, keys: string[]) {
   return keys.some(k => access.perms.includes(k))
 }
 
+// ── Номера машин ──
+// Русские буквы, похожие на латинские (номер могли набрать в русской раскладке)
+const LOOKALIKE: Record<string, string> = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X' }
+// Номер для сравнения: заглавные, без пробелов и дефисов, русские «двойники» → латиница
+export const normPlate = (s: string | null | undefined) =>
+  (s || '').toUpperCase().replace(/[\s-]/g, '').replace(/[АВЕКМНОРСТУХ]/g, ch => LOOKALIKE[ch] || ch)
+// Номер при вводе: заглавные, русские буквы-двойники сразу в латиницу (527АКР1 → 527AKP1)
+export const latinPlate = (s: string) => s.toUpperCase().replace(/[АВЕКМНОРСТУХ]/g, ch => LOOKALIKE[ch] || ch)
+// Остались русские буквы без латинского двойника (Д, Б, Ж…) — такой номер не сохраняем
+export const hasCyrillic = (s: string) => /[А-ЯЁ]/i.test(s)
+
 // Предыдущий день: '2026-10-30' → '2026-10-29'
 export function dayBefore(date: string) {
   const d = new Date(`${date}T00:00:00Z`)
@@ -160,6 +171,23 @@ export async function completeClaim(ctx: Ctx, opts: {
   await ctx.log('update', 'claim', c.id, update)
   if (!(back && block && c.car_id)) return 'done'
   return await endIdle(ctx, { carId: c.car_id, block, date, details: { from_claim: c.id } }) ? 'back' : 'done'
+}
+
+// ── Наклейки ──
+// Замена наклейки: запись в sticker_changes; новый номер (если другой) сразу пишется в карточку авто — подтянется везде.
+// plate — уже в латинице (latinPlate). Возвращает true, если всё записалось.
+export async function recordStickerChange(ctx: Ctx, opts: { carId: string; date: string; oldPlate: string | null; plate: string | null; source?: string }) {
+  const changed = !!opts.plate && opts.plate !== opts.oldPlate
+  if (changed) {
+    const { error } = await ctx.db.from('cars').update({ plate: opts.plate }).eq('id', opts.carId)
+    if (error) return false
+    await ctx.log('update', 'car', opts.carId, { plate_from: opts.oldPlate, plate_to: opts.plate, source: opts.source || 'stickers' })
+  }
+  const payload = { car_id: opts.carId, changed_date: opts.date, old_plate: opts.oldPlate, new_plate: changed ? opts.plate : opts.oldPlate }
+  const { data, error } = await ctx.db.from('sticker_changes').insert(payload).select('id').single()
+  if (error) return false
+  await ctx.log('create', 'sticker_change', data?.id || '', payload)
+  return true
 }
 
 // ── Клеймы → Доходы ──

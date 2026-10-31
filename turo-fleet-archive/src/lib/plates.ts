@@ -2,17 +2,13 @@
 
 import { createClient } from './supabase'
 
+// Перевод номеров в латиницу и сравнение — общие с сервером (lib/core.ts)
+export { normPlate, latinPlate, hasCyrillic } from './core'
+
 // История номеров машин: «Наклейки → Замена номеров» пишет old_plate → new_plate в sticker_changes.
 // Ранние записи (до 27.10.2026) без номеров — их здесь нет.
 
 export interface PlateChange { car_id: string; changed_date: string; old_plate: string; new_plate: string | null }
-
-// Русские буквы, похожие на латинские (номер могли набрать в русской раскладке)
-const LOOKALIKE: Record<string, string> = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', У: 'Y', Х: 'X' }
-
-// Номер для сравнения: заглавные, без пробелов и дефисов, русские «двойники» → латиница
-export const normPlate = (s: string | null | undefined) =>
-  (s || '').toUpperCase().replace(/[\s-]/g, '').replace(/[АВЕКМНОРСТУХ]/g, ch => LOOKALIKE[ch] || ch)
 
 export async function loadPlateHistory(): Promise<PlateChange[]> {
   const { data } = await createClient().from('sticker_changes').select('car_id, changed_date, old_plate, new_plate')
@@ -26,9 +22,3 @@ export function oldPlatesByCar(list: PlateChange[]): Record<string, string[]> {
   for (const x of list) (m[x.car_id] ||= []).push(x.old_plate)
   return m
 }
-
-// Номер при вводе: заглавные, русские буквы-двойники сразу в латиницу (527АКР1 → 527AKP1)
-export const latinPlate = (s: string) => s.toUpperCase().replace(/[АВЕКМНОРСТУХ]/g, ch => LOOKALIKE[ch] || ch)
-
-// Остались русские буквы без латинского двойника (Д, Б, Ж…) — такой номер не сохраняем
-export const hasCyrillic = (s: string) => /[А-ЯЁ]/i.test(s)

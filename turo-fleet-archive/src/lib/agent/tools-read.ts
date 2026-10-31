@@ -79,20 +79,20 @@ const listDowntime: AgentTool = {
   mode: 'read', perms: ['/calendar', '/cars', '/dashboard', '/income', '/reports'],
   def: {
     name: 'list_downtime',
-    description: 'Простои за месяц (по умолчанию текущий): какая машина, с какого по какое число, причина, дней простоя в месяце.',
+    description: 'Простои за месяц (по умолчанию текущий): block_id, машина, с какого по какое число, причина, дней простоя в месяце.',
     input_schema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM' }, car_id: { type: 'string' } } },
   },
   async run(ctx, input) {
     const from = monthOr(input.month, ctx.today)
     const end = `${from.slice(0, 8)}${new Date(Number(from.slice(0, 4)), Number(from.slice(5, 7)), 0).getDate()}`
-    let q = ctx.db.from('car_blocks').select('car_id, start_date, end_date, reason').lte('start_date', end).or(`end_date.is.null,end_date.gte.${from}`).order('start_date')
+    let q = ctx.db.from('car_blocks').select('id, car_id, start_date, end_date, reason').lte('start_date', end).or(`end_date.is.null,end_date.gte.${from}`).order('start_date')
     if (str(input.car_id)) q = q.eq('car_id', str(input.car_id))
     const { data } = await q
-    const rows = (data || []) as { car_id: string; start_date: string; end_date: string | null; reason: string | null }[]
+    const rows = (data || []) as { id: string; car_id: string; start_date: string; end_date: string | null; reason: string | null }[]
     if (!rows.length) return 'Простоев нет'
     const { data: cars } = await ctx.db.from('cars').select('id, make, model, plate')
     const name = (id: string) => { const c = (cars || []).find(x => x.id === id); return c ? carLabel(c) : id }
-    return rows.map(b => `${name(b.car_id)} · с ${b.start_date} по ${b.end_date || '…'} · ${b.reason || 'без причины'} · дней в месяце: ${idleDaysInMonth(rows.filter(x => x.car_id === b.car_id), from)}`).join('\n')
+    return rows.map(b => `block_id ${b.id} · ${name(b.car_id)} · с ${b.start_date} по ${b.end_date || '…'} · ${b.reason || 'без причины'} · дней в месяце: ${idleDaysInMonth(rows.filter(x => x.car_id === b.car_id), from)}`).join('\n')
   },
 }
 
@@ -158,19 +158,19 @@ const salarySummary: AgentTool = {
     const [carsRes, blocksRes, dedRes] = await Promise.all([
       ctx.db.from('cars').select('id, make, model, plate, delisted, removed_from'),
       ctx.db.from('car_blocks').select('car_id, start_date, end_date'),
-      ctx.db.from('salary_deductions').select('date, reason, amount').gte('date', period).lte('date', `${period.slice(0, 8)}31`),
+      ctx.db.from('salary_deductions').select('id, date, reason, amount').gte('date', period).lte('date', `${period.slice(0, 8)}31`),
     ])
     const cars = ((carsRes.data || []) as { id: string; make: string; model: string; plate: string; delisted: boolean; removed_from: string | null }[]).filter(c => inFleet(c, period))
     const blocks = (blocksRes.data || []) as { car_id: string; start_date: string; end_date: string | null }[]
     const lines = cars.map(c => { const d = idleDaysInMonth(blocks.filter(b => b.car_id === c.id), period); return { c, d, pay: calcSalary(d, total) } })
     const sum = lines.reduce((s, l) => s + l.pay, 0)
-    const deds = (dedRes.data || []) as { date: string; reason: string; amount: number }[]
+    const deds = (dedRes.data || []) as { id: string; date: string; reason: string; amount: number }[]
     const dedSum = deds.reduce((s, d) => s + num(d.amount), 0)
     return [
       ...lines.filter(l => l.pay < 150).map(l => `${carLabel(l.c)}: простой ${l.d} дн. → ${usd(l.pay)}`),
       `Остальные ${lines.filter(l => l.pay === 150).length} машин → $150`,
       `По машинам: ${usd(sum)}`,
-      ...deds.map(d => `Вычет ${d.date}: ${d.reason} −${usd(num(d.amount))}`),
+      ...deds.map(d => `Вычет ${d.date}: ${d.reason} −${usd(num(d.amount))} (deduction_id ${d.id})`),
       `К выплате: ${usd(sum - dedSum)}`,
     ].join('\n')
   },

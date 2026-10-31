@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import { recordStickerChange } from '@/lib/core'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
 import { Plus, X, Check, Tag, History, ArrowRight } from 'lucide-react'
@@ -170,21 +171,11 @@ export default function StickersView() {
     setNewPlate('')
   }
 
+  // Новый номер сразу пишется в карточку авто — он подтянется во все разделы (lib/core.ts)
   async function recordChange(carId: string, date: string, oldPlate: string | null, plate: string | null) {
-    const supabase = createClient()
-    const changed = !!plate && plate !== oldPlate
-    // Новый номер сразу пишем в карточку авто — он подтянется во все разделы
-    if (changed) {
-      const { error: carErr } = await supabase.from('cars').update({ plate }).eq('id', carId)
-      if (carErr) { return false }
-      await log('update', 'car', carId, { plate_from: oldPlate, plate_to: plate, source: 'stickers' })
-    }
-    const payload = { car_id: carId, changed_date: date, old_plate: oldPlate, new_plate: changed ? plate : oldPlate }
-    const { data, error } = await supabase.from('sticker_changes').insert(payload).select().single()
-    if (error) { return false }
-    if (data) await log('create', 'sticker_change', data.id, payload)
-    load()
-    return true
+    const ok = await recordStickerChange({ db: createClient(), log }, { carId, date, oldPlate, plate })
+    if (ok) load()
+    return ok
   }
 
   async function deleteChange(ch: StickerChange) {
