@@ -221,7 +221,10 @@ async function writeItems(db: SupabaseClient, revenueCarId: string, period: stri
 
 // Поставить сумму Initial или Supplement в строку этого клейма (0 — убрать)
 export function setPart(items: ClaimItemRow[], claimId: string, kind: ClaimKind, amount: number, pct: number) {
-  const idx = items.findIndex(i => i.claim_id === claimId)
+  let idx = items.findIndex(i => i.claim_id === claimId)
+  // Сумму уже внесли в «Доходы» руками (строка без claim_id с той же суммой) — берём эту строку, а не добавляем вторую
+  if (idx < 0 && amount) idx = items.findIndex(i => !i.claim_id && Number(kind === 'initial' ? i.claim : i.supplement) === amount)
+  if (idx >= 0) items[idx].claim_id = claimId
   const row: ClaimItemRow = idx >= 0 ? items[idx] : { claim: 0, supplement: 0, pct: 0, claim_id: claimId }
   if (kind === 'initial') row.claim = amount
   else { row.supplement = amount; row.pct = amount ? pct : 0 }

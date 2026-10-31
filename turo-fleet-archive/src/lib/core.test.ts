@@ -173,6 +173,23 @@ test('Supplement → «Доходы»: одна строка на клейм, п
   assert.deepEqual(entry('2026-11-01')!.claim_items, [])
 })
 
+test('клейм → «Доходы»: сумма уже внесена руками — строка привязывается, второй не появляется', async () => {
+  const { ctx, tables } = setup({
+    revenue_cars: [{ id: 'rc1', car_id: 'car1', account: 'A', added_from: '2026-01-01', sold_from: null }],
+    revenue_entries: [{ id: 'e1', revenue_car_id: 'rc1', period: '2026-10-01', claim_items: [{ claim: 562, supplement: 4731, pct: 0.25 }] }],
+  })
+  const items = () => tables.revenue_entries[0].claim_items
+  await putClaimPayment(ctx, { claimId: 'c1', carId: 'car1', kind: 'supplement', amount: 4731, pct: 0.25, period: '2026-10-01' })
+  assert.deepEqual(items(), [{ claim: 562, supplement: 4731, pct: 0.25, claim_id: 'c1' }])
+  // Initial той же строки — тоже без дубля
+  await putClaimPayment(ctx, { claimId: 'c1', carId: 'car1', kind: 'initial', amount: 562, period: '2026-10-01' })
+  assert.equal(items().length, 1)
+  // другая сумма у чужого клейма — новая строка, ручная не трогается
+  await putClaimPayment(ctx, { claimId: 'c2', carId: 'car1', kind: 'supplement', amount: 999, period: '2026-10-01' })
+  assert.equal(items().length, 2)
+  assert.equal(items()[0].claim_id, 'c1')
+})
+
 test('клейм → «Доходы»: без машины или без привязки к «Доходам» — понятная ошибка', async () => {
   const { ctx } = setup({ revenue_cars: [], revenue_entries: [] })
   assert.equal(await putClaimPayment(ctx, { claimId: 'c', carId: null, kind: 'initial', amount: 1, period: '2026-10-01' }), 'У клейма не выбрана машина')
