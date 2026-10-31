@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Send, Unlink, RefreshCw } from 'lucide-react'
+import { Send, Unlink, RefreshCw, Power, CheckCircle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase'
@@ -11,12 +11,14 @@ import { ask, notify } from '@/lib/ui'
 // Профиль → Telegram: привязать свой Telegram к боту-учётчику (ссылка с одноразовым кодом),
 // отключить; владельцу — галочка «сообщать о расходах сотрудников».
 interface Link { user_id: string; username: string | null; notify_expenses: boolean; linked_at: string }
+interface BotState { connected: boolean; missing?: string[]; lastError?: string | null }
 
 export default function TelegramCard() {
   const access = useAccess()
   const [link, setLink] = useState<Link | null | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [waiting, setWaiting] = useState(false)   // открыли Telegram — ждём, пока нажмут Start
+  const [bot, setBot] = useState<BotState | null>(null)   // админу: подключён ли бот к сайту
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -28,6 +30,24 @@ export default function TelegramCard() {
   }, [])
   // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [load])
+
+  const isAdmin = access?.role === 'admin'
+  const loadBot = useCallback(async () => {
+    const res = await fetch('/api/telegram/setup')
+    if (res.ok) setBot(await res.json())
+  }, [])
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
+  useEffect(() => { if (isAdmin) loadBot() }, [isAdmin, loadBot])
+
+  async function enableBot() {
+    setBusy(true)
+    const res = await fetch('/api/telegram/setup', { method: 'POST' })
+    const json = await res.json().catch(() => ({})) as { error?: string }
+    setBusy(false)
+    if (!res.ok) { notify(json.error || 'Не получилось', 'error'); return }
+    notify('Бот подключён к сайту', 'success')
+    loadBot()
+  }
 
   async function connect() {
     setBusy(true)
@@ -58,6 +78,19 @@ export default function TelegramCard() {
   return (
     <div className="bg-white rounded-[18px] p-6 card-shadow border border-gray-100/80 mt-5">
       <h2 className="flex items-center gap-2 text-base font-bold text-gray-900 mb-1"><Send size={17} className="text-gray-400" /> Telegram-бот</h2>
+      {isAdmin && bot && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-gray-50 px-3.5 py-2.5 my-3 text-sm">
+          {bot.connected ? (
+            <span className="inline-flex items-center gap-1.5 font-medium text-emerald-600"><CheckCircle size={15} /> Бот подключён к сайту</span>
+          ) : (
+            <>
+              <span className="text-gray-600">{bot.missing?.length ? `В Vercel не хватает: ${bot.missing.join(', ')}` : 'Бот ещё не подключён к сайту'}</span>
+              <button type="button" disabled={busy || !!bot.missing?.length} onClick={enableBot} className="btn-primary inline-flex items-center gap-2"><Power size={15} /> Включить бота</button>
+            </>
+          )}
+          {bot.lastError && <span className="w-full text-xs text-rose-500">Последняя ошибка Telegram: {bot.lastError}</span>}
+        </div>
+      )}
       {link ? (
         <>
           <p className="text-sm text-gray-500 mb-4">
