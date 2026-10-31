@@ -15,5 +15,8 @@ export const putClaimPayment = (opts: Parameters<typeof core.putClaimPayment>[1]
 // Initial / Supplement получен: сумма в клейме + строка в «Доходах» (если есть доступ)
 export const recordClaimPayment = (opts: Parameters<typeof core.recordClaimPayment>[1]) => core.recordClaimPayment(ctx(), opts)
 
+// Ремонт по клейму оплачен: в колонку «Ремонт» машины за месяц оплаты (amount 0 — убрать)
+export const recordClaimRepair = (opts: Parameters<typeof core.recordClaimRepair>[1]) => core.recordClaimRepair(ctx(), opts)
+
 // Убрать сумму клейма из «Доходов»
 export const dropClaimPayment = (opts: Parameters<typeof core.dropClaimPayment>[1]) => core.dropClaimPayment(ctx(), opts)

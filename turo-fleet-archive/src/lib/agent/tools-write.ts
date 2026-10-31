@@ -1,4 +1,4 @@
-import { putIdle, endIdle, blocksOn, completeClaim, claimBlockOn, recordClaimPayment, removeCarFrom, canAny } from '../core'
+import { putIdle, endIdle, blocksOn, completeClaim, claimBlockOn, recordClaimPayment, recordClaimRepair, removeCarFrom, canAny } from '../core'
 import { carLabel, carOf, dateOr, isDate, money, monthOr, optStr, str, usd, type AgentTool, type ToolCtx, type Input } from './tools'
 
 // Инструменты, которые меняют данные. add_expense пишет сразу (кнопка «Отменить»), остальные — после «Записать».
@@ -227,6 +227,31 @@ const claimPayment: AgentTool = {
   },
 }
 
+const claimRepair: AgentTool = {
+  mode: 'confirm', perms: ['/claims'],
+  def: {
+    name: 'claim_repair',
+    description: 'Оплатили ремонт по клейму: сумма идёт в колонку «Ремонт» машины в «Доходах» за месяц ОПЛАТЫ (month, по умолчанию текущий), даже если клейм открыт давно. Повторный ввод заменяет сумму; amount 0 — убрать.',
+    input_schema: { type: 'object', properties: { claim_id: { type: 'string' }, amount: { type: 'number' }, month: { type: 'string', description: 'YYYY-MM' } }, required: ['claim_id', 'amount'] },
+  },
+  async prepare(ctx, input) {
+    const { data: c } = await ctx.db.from('claims').select('claim_number, car_id, repair_amount').eq('id', str(input.claim_id)).maybeSingle()
+    if (!c) return { error: 'Клейм не найден' }
+    const amount = money(input.amount)
+    if (!(amount >= 0)) return { error: 'Неверная сумма' }
+    const car = carOf(ctx, c.car_id)
+    const name = `клейм № ${c.claim_number || '—'}${car ? ` (${carLabel(car)})` : ''}`
+    return { summary: amount ? `Ремонт ${usd(amount)} по ${name} → «Ремонт» за ${monthOr(input.month, ctx.today).slice(0, 7)}${c.repair_amount ? ` (было ${usd(Number(c.repair_amount))})` : ''}` : `Убрать ремонт по ${name}` }
+  },
+  async run(ctx, input) {
+    const { data: c } = await ctx.db.from('claims').select('id, car_id, repair_amount, repair_period').eq('id', str(input.claim_id)).maybeSingle()
+    if (!c) return 'Клейм не найден'
+    const amount = money(input.amount)
+    const err = await recordClaimRepair(ctx.core, { claim: c, amount, period: amount ? monthOr(input.month, ctx.today) : null, canIncome: canAny(ctx.actor, ['/income']) })
+    return err ? `Ошибка: ${err}` : amount ? 'Ремонт записан' : 'Ремонт убран'
+  },
+}
+
 // ── Зарплата, доходы, расходы, парк ──
 
 const addDeduction: AgentTool = {
@@ -356,6 +381,6 @@ const removeCar: AgentTool = {
 }
 
 export const WRITE_TOOLS = [
-  addExpense, putIdleTool, returnToWork, addClaim, updateClaim, completeClaimTool, claimPayment,
+  addExpense, putIdleTool, returnToWork, addClaim, updateClaim, completeClaimTool, claimPayment, claimRepair,
   addDeduction, setRevenue('gross', 'Gross'), setRevenue('payment', 'Платёж за машину'), setExpensePaid, deleteExpense, removeCar,
 ]

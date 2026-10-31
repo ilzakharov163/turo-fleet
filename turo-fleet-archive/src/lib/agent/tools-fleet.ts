@@ -1,4 +1,4 @@
-import { dropClaimPayment, recordStickerChange, restoreCar, latinPlate, hasCyrillic, canAny } from '../core'
+import { dropClaimPayment, recordClaimRepair, recordStickerChange, restoreCar, latinPlate, hasCyrillic, canAny } from '../core'
 import { carLabel, carOf, dateOr, isDate, money, str, usd, type AgentTool, type Input } from './tools'
 
 // Остальные действия «Авто» и «Расходов»: машины, наклейки, правка простоев, клеймов, расходов и вычетов.
@@ -191,7 +191,7 @@ const deleteDowntime: AgentTool = {
 
 const deleteClaim: AgentTool = {
   mode: 'confirm', perms: ['/claims'],
-  def: { name: 'delete_claim', description: 'Удалить клейм (создан по ошибке). Суммы Initial/Supplement из «Доходов» тоже уберутся.', input_schema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] } },
+  def: { name: 'delete_claim', description: 'Удалить клейм (создан по ошибке). Суммы Initial/Supplement и ремонт из «Доходов» тоже уберутся.', input_schema: { type: 'object', properties: { claim_id: { type: 'string' } }, required: ['claim_id'] } },
   async prepare(ctx, input) {
     const { data } = await ctx.db.from('claims').select('claim_number, car_id').eq('id', str(input.claim_id)).maybeSingle()
     if (!data) return { error: 'Клейм не найден' }
@@ -199,11 +199,12 @@ const deleteClaim: AgentTool = {
     return { summary: `Удалить клейм № ${data.claim_number || '—'}${car ? ` (${carLabel(car)})` : ''}` }
   },
   async run(ctx, input) {
-    const { data: c } = await ctx.db.from('claims').select('id, car_id, initial_period, supplement_period').eq('id', str(input.claim_id)).maybeSingle()
+    const { data: c } = await ctx.db.from('claims').select('id, car_id, initial_period, supplement_period, repair_amount, repair_period').eq('id', str(input.claim_id)).maybeSingle()
     if (!c) return 'Клейм не найден'
     if (canAny(ctx.actor, ['/income'])) {
       await dropClaimPayment(ctx.core, { claimId: c.id, carId: c.car_id, kind: 'initial', period: c.initial_period })
       await dropClaimPayment(ctx.core, { claimId: c.id, carId: c.car_id, kind: 'supplement', period: c.supplement_period })
+      if (c.repair_amount) await recordClaimRepair(ctx.core, { claim: c, amount: 0, period: null, canIncome: true })
     }
     const { error } = await ctx.db.from('claims').delete().eq('id', c.id)
     if (error) return 'Ошибка: не удалилось'

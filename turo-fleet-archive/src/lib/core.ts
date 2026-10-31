@@ -271,6 +271,45 @@ export async function recordClaimPayment(ctx: Ctx, opts: {
   return null
 }
 
+// ── Ремонт по клейму → «Доходы» ──
+// Ремонт считается по факту оплаты: сумма идёт в колонку «Ремонт» машины за месяц оплаты (не месяц клейма).
+// В «Ремонте» могут быть и суммы, внесённые руками, поэтому прибавляем/вычитаем только сумму этого клейма
+// (claims.repair_amount / repair_period). Повторный ввод заменяет сумму, смена месяца переносит её.
+
+async function addRepair(db: SupabaseClient, revenueCarId: string, period: string, delta: number) {
+  const { data: cur } = await db.from('revenue_entries').select('id, repair').eq('revenue_car_id', revenueCarId).eq('period', period).maybeSingle()
+  const repair = Math.max(0, Math.round((Number(cur?.repair || 0) + delta) * 100) / 100)
+  if (cur) return !(await db.from('revenue_entries').update({ repair, updated_at: new Date().toISOString() }).eq('id', cur.id)).error
+  if (!repair) return true
+  return !(await db.from('revenue_entries').insert({ revenue_car_id: revenueCarId, period, repair })).error
+}
+
+// Ремонт по клейму оплачен: сумма и месяц в клейме + (если есть доступ к «Доходам») колонка «Ремонт». amount 0 — убрать.
+// Возвращает текст ошибки или null.
+export async function recordClaimRepair(ctx: Ctx, opts: {
+  claim: { id: string; car_id: string | null; repair_amount?: number | null; repair_period?: string | null }
+  amount: number; period: string | null; canIncome: boolean
+}): Promise<string | null> {
+  const { claim: c, amount } = opts
+  const old = Number(c.repair_amount || 0)
+  if (opts.canIncome) {
+    if (!c.car_id) return 'У клейма не выбрана машина'
+    const rc = amount && opts.period ? await revenueCarFor(ctx.db, c.car_id, opts.period) : null
+    if (amount && !rc) return 'Эта машина не привязана к «Доходам» в этом месяце'
+    if (old && c.repair_period) {
+      const prev = await revenueCarFor(ctx.db, c.car_id, c.repair_period)
+      if (prev && !await addRepair(ctx.db, prev.id, c.repair_period, -old)) return 'Не удалось записать в «Доходы»'
+    }
+    if (amount && rc && !await addRepair(ctx.db, rc.id, opts.period!, amount)) return 'Не удалось записать в «Доходы»'
+    if (rc) await ctx.log('update', 'revenue_entry', rc.id, { period: opts.period, from_claim: c.id, kind: 'repair', amount })
+  }
+  const update = amount ? { repair_amount: amount, repair_period: opts.period } : { repair_amount: null, repair_period: null }
+  const { error } = await ctx.db.from('claims').update(update).eq('id', c.id)
+  if (error) return 'Не сохранилось'
+  await ctx.log('update', 'claim', c.id, update)
+  return null
+}
+
 // Убрать сумму клейма из «Доходов»
 export async function dropClaimPayment(ctx: Ctx, opts: { claimId: string; carId: string | null; kind: ClaimKind; period: string | null }) {
   if (!opts.carId || !opts.period) return true

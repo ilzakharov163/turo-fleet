@@ -22,7 +22,7 @@ const cost = (r: Pick<Run, 'input_tokens' | 'output_tokens'>) => (r.input_tokens
 const TOOL_LABELS: Record<string, string> = {
   add_expense: 'Записал расход', put_idle: 'Подготовил простой', return_to_work: 'Подготовил возврат в работу',
   add_claim: 'Подготовил новый клейм', update_claim: 'Подготовил изменение клейма', complete_claim: 'Подготовил завершение клейма',
-  claim_payment: 'Подготовил выплату по клейму', add_deduction: 'Подготовил вычет из зарплаты', set_gross: 'Подготовил Gross',
+  claim_payment: 'Подготовил выплату по клейму', claim_repair: 'Подготовил ремонт по клейму', add_deduction: 'Подготовил вычет из зарплаты', set_gross: 'Подготовил Gross',
   set_car_payment: 'Подготовил платёж за машину', set_expense_paid: 'Подготовил отметку оплаты', delete_expense: 'Подготовил удаление расхода',
   remove_car: 'Подготовил «продана/разбита»', list_claims: 'Посмотрел клеймы', list_expenses: 'Посмотрел расходы',
   list_downtime: 'Посмотрел простои', income_summary: 'Посмотрел доходы', salary_summary: 'Посчитал зарплату',

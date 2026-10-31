@@ -19,13 +19,13 @@ const listClaims: AgentTool = {
     },
   },
   async run(ctx, input) {
-    let q = ctx.db.from('claims').select('id, car_id, claim_number, description, status, opened_date, completed_date, still_listed, initial_payment_received, initial_amount, supplement_paid, supplement_amount, notes, car:cars(make, model, plate)')
+    let q = ctx.db.from('claims').select('id, car_id, claim_number, description, status, opened_date, completed_date, still_listed, initial_payment_received, initial_amount, supplement_paid, supplement_amount, repair_amount, repair_period, notes, car:cars(make, model, plate)')
       .order('opened_date', { ascending: false }).limit(60)
     const status = str(input.status) || 'open'
     if (status === 'open') q = q.neq('status', 'done')
     if (status === 'done') q = q.eq('status', 'done')
     const { data } = await q
-    type Row = { id: string; claim_number: string | null; description: string | null; status: string; opened_date: string | null; completed_date: string | null; still_listed: boolean; initial_payment_received: boolean; initial_amount: number | null; supplement_paid: boolean; supplement_amount: number | null; notes: string | null; car: { make: string; model: string; plate: string } | null }
+    type Row = { id: string; claim_number: string | null; description: string | null; status: string; opened_date: string | null; completed_date: string | null; still_listed: boolean; initial_payment_received: boolean; initial_amount: number | null; supplement_paid: boolean; supplement_amount: number | null; repair_amount: number | null; repair_period: string | null; notes: string | null; car: { make: string; model: string; plate: string } | null }
     let rows = (data || []) as unknown as Row[]
     const needle = str(input.query).toLowerCase()
     if (needle) rows = rows.filter(r => [r.claim_number, r.description, r.notes, r.car ? carLabel(r.car) : ''].some(v => (v || '').toLowerCase().includes(needle)))
@@ -36,6 +36,7 @@ const listClaims: AgentTool = {
       r.status !== 'done' ? (r.still_listed ? 'машина в листинге' : 'машина снята с листинга') : '',
       `Initial: ${r.initial_payment_received ? (r.initial_amount ? usd(num(r.initial_amount)) : 'получен') : 'нет'}`,
       `Supplement: ${r.supplement_paid ? (r.supplement_amount ? usd(num(r.supplement_amount)) : 'получен') : 'нет'}`,
+      r.repair_amount ? `Ремонт ${usd(num(r.repair_amount))} (${(r.repair_period || '').slice(0, 7)})` : '',
     ].filter(Boolean).join(' · ')).join('\n')
   },
 }

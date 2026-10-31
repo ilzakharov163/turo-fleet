@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- поддельная база: строки и запросы без типов */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { accessFrom, canAny, recordClaimPayment, dayBefore, putIdle, unlistByClaim, completeClaim, endIdle, putClaimPayment, dropClaimPayment, removeCarFrom, restoreCar, type Ctx } from './core.ts'
+import { accessFrom, canAny, recordClaimPayment, recordClaimRepair, dayBefore, putIdle, unlistByClaim, completeClaim, endIdle, putClaimPayment, dropClaimPayment, removeCarFrom, restoreCar, type Ctx } from './core.ts'
 
 type Row = Record<string, any>
 
@@ -234,4 +234,41 @@ test('выплата по клейму: сумма в клейме и в «До�
   assert.equal(await recordClaimPayment(ctx, { claim: tables.claims[0] as any, kind: 'initial', amount: 300, pct: 0, period: '2026-10-01', canIncome: false }), null)
   assert.equal(tables.claims[0].initial_amount, 300)
   assert.equal(tables.revenue_entries[0].claim_items.length, 1)
+})
+
+test('Initial в октябре, Supplement в ноябре — каждый в месяц, когда пришли деньги', async () => {
+  const { ctx, tables } = setup({
+    claims: [{ id: 'c1', car_id: 'car1', initial_period: null, supplement_period: null }],
+    revenue_cars: [{ id: 'rc1', car_id: 'car1', added_from: '2026-01-01', sold_from: null }],
+    revenue_entries: [],
+  })
+  await recordClaimPayment(ctx, { claim: tables.claims[0] as any, kind: 'initial', amount: 500, pct: 0, period: '2026-10-01', canIncome: true })
+  await recordClaimPayment(ctx, { claim: tables.claims[0] as any, kind: 'supplement', amount: 3000, pct: 0.2, period: '2026-11-01', canIncome: true })
+  const oct = tables.revenue_entries.find(e => e.period === '2026-10-01')!
+  const nov = tables.revenue_entries.find(e => e.period === '2026-11-01')!
+  assert.deepEqual(oct.claim_items, [{ claim: 500, supplement: 0, pct: 0, claim_id: 'c1' }])
+  assert.deepEqual(nov.claim_items, [{ claim: 0, supplement: 3000, pct: 0.2, claim_id: 'c1' }])
+})
+
+test('ремонт по клейму: в месяц оплаты, прибавляется к ручному ремонту, повтор заменяет, перенос и снятие', async () => {
+  const { ctx, tables } = setup({
+    claims: [{ id: 'c1', car_id: 'car1', repair_amount: null, repair_period: null }],
+    revenue_cars: [{ id: 'rc1', car_id: 'car1', added_from: '2026-01-01', sold_from: null }],
+    revenue_entries: [{ id: 'e1', revenue_car_id: 'rc1', period: '2026-12-01', repair: 100, claim_items: [] }],
+  })
+  const claim = () => tables.claims[0] as any
+  const repair = (p: string) => tables.revenue_entries.find(e => e.period === p)?.repair
+  // клейм открыт давно, ремонт оплатили в декабре: 100 (руками) + 1200
+  assert.equal(await recordClaimRepair(ctx, { claim: claim(), amount: 1200, period: '2026-12-01', canIncome: true }), null)
+  assert.equal(repair('2026-12-01'), 1300)
+  assert.equal(claim().repair_amount, 1200); assert.equal(claim().repair_period, '2026-12-01')
+  // уточнили сумму — заменяется, ручные 100 остаются
+  await recordClaimRepair(ctx, { claim: claim(), amount: 1500, period: '2026-12-01', canIncome: true })
+  assert.equal(repair('2026-12-01'), 1600)
+  // перенесли в январь: из декабря уходит, в январе появляется
+  await recordClaimRepair(ctx, { claim: claim(), amount: 1500, period: '2027-01-01', canIncome: true })
+  assert.equal(repair('2026-12-01'), 100); assert.equal(repair('2027-01-01'), 1500)
+  // сняли
+  await recordClaimRepair(ctx, { claim: claim(), amount: 0, period: null, canIncome: true })
+  assert.equal(repair('2027-01-01'), 0); assert.equal(claim().repair_amount, null)
 })
