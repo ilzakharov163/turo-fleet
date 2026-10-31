@@ -34,7 +34,8 @@ function stepText(s: Run['agent_steps'][number]) {
   if (s.kind === 'confirm') return `Ждёт кнопки «Записать»: ${s.text}`
   if (s.kind === 'tool') {
     const [name, ...rest] = s.text.split(': ')
-    const result = rest.join(': ')
+    // У чтения результат — служебная выгрузка (id записей), его не показываем; ответ человеку виден ниже
+    const result = /^(list_|income_|salary_)/.test(name) && !rest.join(': ').startsWith('Ошибка') ? '' : rest.join(': ')
     return `${TOOL_LABELS[name] || name}${result ? ` — ${result}` : ''}`
   }
   return s.text
