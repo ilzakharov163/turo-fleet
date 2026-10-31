@@ -25,7 +25,7 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
     const code = text.split(/\s+/)[1]
     if (!code) return send(chatId, 'Здравствуйте! Чтобы я вас узнал, откройте сайт → Настройки → Профиль → «Подключить Telegram».')
     const name = await linkByCode(db, code, chatId, msg.from?.username || null)
-    return send(chatId, name ? `Готово, ${esc(name)}! Пишите или говорите, что произошло: расход, клейм, простой, выплата — я внесу в приложение.` : 'Код не подошёл или устарел. Получите новый на сайте: Профиль → «Подключить Telegram».')
+    return send(chatId, name !== null ? `Готово${name ? `, ${esc(name)}` : ''}! Пишите или говорите, что произошло: расход, клейм, простой, выплата — я внесу в приложение.` : 'Код не подошёл или устарел. Получите новый на сайте: Профиль → «Подключить Telegram».')
   }
 
   const actor = await actorByChat(db, chatId)
