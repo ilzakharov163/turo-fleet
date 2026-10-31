@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { User, Mail, Lock, Shield, Wrench, LogOut } from 'lucide-react'
+import TelegramCard from '@/components/TelegramCard'
 
 const roleLabels: Record<string, { label: string; icon: typeof Shield; color: string }> = {
   owner: { label: 'Овнер', icon: Shield, color: 'bg-purple-50 text-purple-600' },
@@ -164,6 +165,8 @@ export default function ProfileView() {
           )}
         </div>
       </form>
+
+      <TelegramCard />
 
       {/* Logout */}
       <button onClick={logout} className="inline-flex items-center gap-2 text-sm font-semibold text-rose-500 hover:text-rose-600 transition-colors px-2 py-2 mt-8">

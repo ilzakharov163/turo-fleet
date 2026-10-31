@@ -4,6 +4,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // Telegram присылает сообщения боту без входа на сайт — адрес защищён своим секретом (app/api/telegram/route.ts)
+  if (pathname === '/api/telegram') return NextResponse.next({ request })
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 

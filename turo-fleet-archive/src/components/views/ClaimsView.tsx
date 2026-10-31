@@ -13,7 +13,7 @@ import { canAny, useAccess } from '@/lib/access'
 import { unlistByClaim, claimBlockOn, completeClaim, type Block } from '@/lib/unlist'
 import { loadPlateHistory, normPlate, oldPlatesByCar } from '@/lib/plates'
 import PlateHistory from '@/components/PlateHistory'
-import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
+import { recordClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
 import MonthPicker from '@/components/ui/MonthPicker'
 import { inFleet } from '@/lib/calc'
 import { loadCarAccounts, type CarAccount } from '@/lib/carAccounts'
@@ -217,16 +217,8 @@ export default function ClaimsView() {
     const { c, kind } = pay
     setPay({ ...pay, busy: true, error: '' })
     const canIncome = canAny(access, ['/income'])
-    if (canIncome) {
-      const err = await putClaimPayment({ claimId: c.id, carId: c.car_id, kind, amount, pct, period, prevPeriod: kind === 'initial' ? c.initial_period : c.supplement_period })
-      if (err) { setPay({ ...pay, busy: false, error: err }); return }
-    }
-    const update = kind === 'initial'
-      ? { initial_payment_received: true, initial_amount: amount, initial_period: period }
-      : { supplement_paid: true, supplement_amount: amount, supplement_pct: pct, supplement_period: period }
-    const { error } = await createClient().from('claims').update(update).eq('id', c.id)
-    if (error) { setPay({ ...pay, busy: false }); return }
-    await log('update', 'claim', c.id, update)
+    const err = await recordClaimPayment({ claim: c, kind, amount, pct, period, canIncome })
+    if (err) { setPay({ ...pay, busy: false, error: err === 'Не сохранилось' ? '' : err }); return }
     notify(canIncome ? `${kind === 'initial' ? 'Initial' : 'Supplement'} записан в «Доходы»` : 'Сумма сохранена в клейме (в «Доходы» не записана — нет доступа)', canIncome ? 'success' : 'info')
     setPay(null)
     load()

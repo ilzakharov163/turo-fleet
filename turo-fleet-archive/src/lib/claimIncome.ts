@@ -12,5 +12,8 @@ export type { ClaimKind, ClaimItemRow } from './core'
 // Записать сумму клейма в «Доходы». Возвращает текст ошибки или null.
 export const putClaimPayment = (opts: Parameters<typeof core.putClaimPayment>[1]) => core.putClaimPayment(ctx(), opts)
 
+// Initial / Supplement получен: сумма в клейме + строка в «Доходах» (если есть доступ)
+export const recordClaimPayment = (opts: Parameters<typeof core.recordClaimPayment>[1]) => core.recordClaimPayment(ctx(), opts)
+
 // Убрать сумму клейма из «Доходов»
 export const dropClaimPayment = (opts: Parameters<typeof core.dropClaimPayment>[1]) => core.dropClaimPayment(ctx(), opts)

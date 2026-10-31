@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- поддельная база: строки и запросы без типов */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { dayBefore, putIdle, unlistByClaim, completeClaim, endIdle, putClaimPayment, dropClaimPayment, removeCarFrom, restoreCar, type Ctx } from './core.ts'
+import { accessFrom, canAny, recordClaimPayment, dayBefore, putIdle, unlistByClaim, completeClaim, endIdle, putClaimPayment, dropClaimPayment, removeCarFrom, restoreCar, type Ctx } from './core.ts'
 
 type Row = Record<string, any>
 
@@ -193,4 +193,28 @@ test('продана/разбита и вернуть: парк и все зап
   assert.equal(await restoreCar(ctx, { carId: 'car1', from: '2026-11-01', canFleet: true, canIncome: true }), true)
   assert.equal(tables.cars[0].removed_from, null)
   assert.deepEqual(tables.revenue_cars.map(r => r.sold_from), [null, null, '2026-05-01', null])
+})
+
+test('права: админ — всё; без галочек — только расходы; «Календарь» = «Авто»', () => {
+  assert.equal(canAny(accessFrom('admin', []), ['/income']), true)
+  assert.equal(canAny(accessFrom('employee', []), ['/expenses']), true)
+  assert.equal(canAny(accessFrom('employee', null), ['/claims']), false)
+  assert.equal(canAny(accessFrom(null, ['/calendar']), ['/cars']), true)
+  assert.equal(canAny(accessFrom('partner', ['/claims']), ['/income', '/claims']), true)
+  assert.equal(canAny(null, []), false)
+})
+
+test('выплата по клейму: сумма в клейме и в «Доходах»; без доступа к «Доходам» — только в клейме', async () => {
+  const { ctx, tables } = setup({
+    claims: [{ id: 'c1', car_id: 'car1', initial_period: null, supplement_period: null }],
+    revenue_cars: [{ id: 'rc1', car_id: 'car1', added_from: '2026-01-01', sold_from: null }],
+    revenue_entries: [],
+  })
+  assert.equal(await recordClaimPayment(ctx, { claim: tables.claims[0] as any, kind: 'supplement', amount: 1000, pct: 0.2, period: '2026-10-01', canIncome: true }), null)
+  assert.equal(tables.claims[0].supplement_paid, true)
+  assert.equal(tables.claims[0].supplement_amount, 1000)
+  assert.equal(tables.revenue_entries[0].claim_items[0].supplement, 1000)
+  assert.equal(await recordClaimPayment(ctx, { claim: tables.claims[0] as any, kind: 'initial', amount: 300, pct: 0, period: '2026-10-01', canIncome: false }), null)
+  assert.equal(tables.claims[0].initial_amount, 300)
+  assert.equal(tables.revenue_entries[0].claim_items.length, 1)
 })

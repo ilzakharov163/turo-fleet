@@ -18,6 +18,24 @@ export function logAs(db: SupabaseClient, user: { id: string; email: string }, v
   }
 }
 
+// ── Права (те же правила, что can_any в базе) ──
+// admin — всё; не-админ без галочек — только /expenses; старая галочка «Календарь» = простои во вкладке «Авто».
+export interface Access { role: string; perms: string[] }
+
+export function accessFrom(role: string | null | undefined, permissions: string[] | null | undefined): Access {
+  const r = role ?? 'employee'
+  let perms = permissions ?? []
+  if (r !== 'admin' && perms.length === 0) perms = ['/expenses']
+  if (perms.includes('/calendar') && !perms.includes('/cars')) perms = [...perms, '/cars']
+  return { role: r, perms }
+}
+
+export function canAny(access: Access | null, keys: string[]) {
+  if (!access) return false
+  if (access.role === 'admin' || keys.length === 0) return true
+  return keys.some(k => access.perms.includes(k))
+}
+
 // Предыдущий день: '2026-10-30' → '2026-10-29'
 export function dayBefore(date: string) {
   const d = new Date(`${date}T00:00:00Z`)
@@ -199,6 +217,26 @@ export async function putClaimPayment(ctx: Ctx, opts: {
   const ok = await writeItems(db, rc.id, opts.period, items => setPart(items, opts.claimId, opts.kind, opts.amount, opts.pct ?? 0.2))
   if (!ok) return 'Не удалось записать в «Доходы»'
   await ctx.log('update', 'revenue_entry', rc.id, { period: opts.period, from_claim: opts.claimId, kind: opts.kind, amount: opts.amount })
+  return null
+}
+
+// Initial / Supplement получен: сумма и месяц в клейме + (если есть доступ к «Доходам») строка в «Доходах».
+// Возвращает текст ошибки или null.
+export async function recordClaimPayment(ctx: Ctx, opts: {
+  claim: { id: string; car_id: string | null; initial_period: string | null; supplement_period: string | null }
+  kind: ClaimKind; amount: number; pct: number; period: string; canIncome: boolean
+}): Promise<string | null> {
+  const { claim: c, kind, amount, pct, period } = opts
+  if (opts.canIncome) {
+    const err = await putClaimPayment(ctx, { claimId: c.id, carId: c.car_id, kind, amount, pct, period, prevPeriod: kind === 'initial' ? c.initial_period : c.supplement_period })
+    if (err) return err
+  }
+  const update = kind === 'initial'
+    ? { initial_payment_received: true, initial_amount: amount, initial_period: period }
+    : { supplement_paid: true, supplement_amount: amount, supplement_pct: pct, supplement_period: period }
+  const { error } = await ctx.db.from('claims').update(update).eq('id', c.id)
+  if (error) return 'Не сохранилось'
+  await ctx.log('update', 'claim', c.id, update)
   return null
 }
 
