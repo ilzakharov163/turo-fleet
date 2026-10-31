@@ -26,9 +26,13 @@ export async function GET(request: Request) {
   if (lack.includes('TELEGRAM_BOT_TOKEN')) return Response.json({ connected: false, missing: lack })
   const info = await tg('getWebhookInfo')
   const url = `${new URL(request.url).origin}/api/telegram`
+  // Токен не принят — так и говорим (иначе карточка молча пишет «не подключён»)
+  if (!info?.ok) return Response.json({ connected: false, missing: lack, lastError: `Telegram не принял токен бота (${info?.description || 'нет ответа'}) — проверьте TELEGRAM_BOT_TOKEN в Vercel` })
+  const current = String(info.result?.url || '')
   return Response.json({
-    connected: info?.ok && info.result?.url === url, missing: lack,
-    lastError: info?.result?.last_error_message || null, pending: info?.result?.pending_update_count ?? 0,
+    connected: current === url, missing: lack,
+    lastError: info.result?.last_error_message || (current && current !== url ? `Бот подключён к другому адресу: ${current}` : null),
+    pending: info.result?.pending_update_count ?? 0,
   })
 }
 
