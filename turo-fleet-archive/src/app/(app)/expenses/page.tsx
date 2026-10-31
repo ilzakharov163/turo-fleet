@@ -41,9 +41,11 @@ export default function ExpensesPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const fileRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
+  const [me, setMe] = useState<string | null>(null)        // кто вошёл — быстрые кнопки по его прошлым расходам
 
   const load = useCallback(async () => {
     const supabase = createClient()
+    supabase.auth.getUser().then(({ data }) => setMe(data.user?.id || null))
     const [carsRes, expRes, trRes] = await Promise.all([
       supabase.from('cars').select('*').order('make'),
       // Только последние 12 месяцев — столько, сколько вкладок месяцев
@@ -76,6 +78,17 @@ export default function ExpensesPage() {
     setForm({ car_id: last?.car_id || '', title: last?.title || '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
     setFiles([]); setExistingFiles([])
     setShowModal(true)
+  }
+
+  // Быстрый расход: статья + сумма и машина из прошлого такого же расхода этого человека, и сразу камера для чека.
+  // Камеру открываем в том же нажатии (иначе телефон не разрешит), поэтому поля выбора файла стоят вне окна.
+  function openQuick(title: string) {
+    const prev = mine.filter(e => e.title === title).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
+    setEditExpense(null)
+    setForm({ car_id: prev?.car_id || mine[0]?.car_id || '', title, notes: '', amount: prev ? String(prev.amount) : '', date: format(new Date(), 'yyyy-MM-dd') })
+    setFiles([]); setExistingFiles([])
+    setShowModal(true)
+    cameraRef.current?.click()
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -234,6 +247,12 @@ export default function ExpensesPage() {
   }
 
   // Generate last 12 months for tabs
+  // Расходы этого человека (новые первыми): частые статьи → быстрые кнопки, последние машины → кнопки в окне
+  const mine = expenses.filter(e => !me || e.created_by === me).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  const quickTitles = Object.entries(mine.slice(0, 60).reduce<Record<string, number>>((m, e) => { m[e.title] = (m[e.title] || 0) + 1; return m }, {}))
+    .sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 4)
+  const recentCars = [...new Set(mine.map(e => e.car_id).filter(Boolean))].slice(0, 3).map(id => cars.find(c => c.id === id)).filter((c): c is Car => !!c)
+
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = subMonths(new Date(), i)
     return { value: format(d, 'yyyy-MM'), label: format(d, 'LLL yyyy', { locale: ru }) }
@@ -277,6 +296,18 @@ export default function ExpensesPage() {
           <Plus size={16} /> Добавить расход
         </button>
       </div>
+
+      {/* Быстрый расход: частые статьи — форма уже заполнена, сразу камера */}
+      {quickTitles.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0" style={{ scrollbarWidth: 'none' }}>
+          <span className="text-xs font-medium text-gray-400 flex-shrink-0">Быстро:</span>
+          {quickTitles.map(t => (
+            <button key={t} type="button" onClick={() => openQuick(t)} className="flex-shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-xl text-sm font-medium text-[#4F46E5] dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 transition-colors whitespace-nowrap">
+              <Camera size={14} /> {t}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Фильтры — одна строка: месяц, статьи, машина, без чека, поиск */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -536,6 +567,11 @@ export default function ExpensesPage() {
       )}
 
 
+      {/* Выбор файлов — вне окна: быстрые кнопки открывают камеру в том же нажатии, до появления окна.
+          capture="environment" — сразу открывает заднюю камеру телефона */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+      <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="hidden" />
+
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] flex items-end sm:items-center justify-center z-50 sm:p-4">
@@ -546,7 +582,8 @@ export default function ExpensesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Статья расходов</label>
                 <select required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className={inputCls}>
                   <option value="">Выберите статью...</option>
-                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {/* Статья не из списка (например, «Установка GPS» из бота) тоже видна в выборе */}
+                  {[...EXPENSE_CATEGORIES, ...(form.title && !EXPENSE_CATEGORIES.includes(form.title) ? [form.title] : [])].map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
@@ -563,6 +600,16 @@ export default function ExpensesPage() {
                     ...cars.map(c => ({ value: c.id, label: `${c.make} ${c.model} ${c.plate}` })),
                   ]}
                 />
+                {!editExpense && recentCars.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {recentCars.map(c => (
+                      <button key={c.id} type="button" onClick={() => setForm(f => ({ ...f, car_id: c.id }))}
+                        className={`h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${form.car_id === c.id ? 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 ring-1 ring-indigo-200' : 'bg-gray-100 text-gray-600'}`}>
+                        {c.model} {c.plate}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -610,9 +657,6 @@ export default function ExpensesPage() {
                     </button>
                   </div>
                 )}
-                {/* capture="environment" — сразу открывает заднюю камеру телефона */}
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
-                <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple onChange={handleFileChange} className="hidden" />
               </div>
 
               <div className="flex gap-3 pt-2">
