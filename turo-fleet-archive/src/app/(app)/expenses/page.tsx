@@ -41,6 +41,8 @@ export default function ExpensesPage() {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const fileRef = useRef<HTMLInputElement>(null)
   const cameraRef = useRef<HTMLInputElement>(null)
+  const [reading, setReading] = useState(false)          // читаем сумму с фото
+  const [readNote, setReadNote] = useState('')            // что прочитали (или почему нет)
   const [me, setMe] = useState<string | null>(null)        // кто вошёл — быстрые кнопки по его прошлым расходам
 
   const load = useCallback(async () => {
@@ -76,19 +78,37 @@ export default function ExpensesPage() {
     const last = [...expenses].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
     setEditExpense(null)
     setForm({ car_id: last?.car_id || '', title: last?.title || '', notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
-    setFiles([]); setExistingFiles([])
+    setFiles([]); setExistingFiles([]); setReadNote('')
     setShowModal(true)
   }
 
-  // Быстрый расход: статья + сумма и машина из прошлого такого же расхода этого человека, и сразу камера для чека.
+  // Быстрый расход: статья уже выбрана и сразу камера для чека; сумму прочитаем с фото, машину человек выбирает сам.
   // Камеру открываем в том же нажатии (иначе телефон не разрешит), поэтому поля выбора файла стоят вне окна.
   function openQuick(title: string) {
-    const prev = mine.filter(e => e.title === title).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))[0]
     setEditExpense(null)
-    setForm({ car_id: prev?.car_id || mine[0]?.car_id || '', title, notes: '', amount: prev ? String(prev.amount) : '', date: format(new Date(), 'yyyy-MM-dd') })
-    setFiles([]); setExistingFiles([])
+    setForm({ car_id: '', title, notes: '', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
+    setFiles([]); setExistingFiles([]); setReadNote('')
     setShowModal(true)
     cameraRef.current?.click()
+  }
+
+  // Сумма и дата с фото чека/скриншота (Claude, ~1 цент). Пишем, только если человек ещё не ввёл сумму сам.
+  async function readAmount(file: File) {
+    setReading(true); setReadNote('')
+    const body = new FormData()
+    body.append('file', file)
+    const res = await fetch('/api/receipt', { method: 'POST', body }).catch(() => null)
+    const data = res?.ok ? await res.json() as { amount: number | null; date: string | null; merchant: string | null } : null
+    setReading(false)
+    if (!data) { setReadNote('Не получилось прочитать фото — введите сумму'); return }
+    const today = format(new Date(), 'yyyy-MM-dd')
+    const recent = (d: string | null) => !!d && d <= today && d >= format(subMonths(new Date(), 2), 'yyyy-MM-dd')
+    setForm(f => ({
+      ...f,
+      amount: f.amount || (data.amount != null ? String(data.amount) : ''),
+      date: f.date === today && recent(data.date) ? data.date! : f.date,
+    }))
+    setReadNote(data.amount != null ? `С фото: $${data.amount.toFixed(2)}${data.merchant ? ` · ${data.merchant}` : ''}${recent(data.date) && data.date !== today ? ` · ${format(parseISO(data.date!), 'd MMM', { locale: ru })}` : ''} — проверьте` : 'На фото не нашёл сумму — введите сами')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -191,6 +211,8 @@ export default function ExpensesPage() {
     if (total > 5) { notify('Максимум 5 файлов', 'error'); return }
     const compressed = await Promise.all(selected.map(compressImage))
     setFiles(prev => [...prev, ...compressed])
+    // Первый чек нового расхода — читаем с него сумму
+    if (!editExpense && files.length + existingFiles.length === 0 && !form.amount && compressed[0]) readAmount(compressed[0])
   }
 
   async function handlePreview(path: string) {
@@ -247,14 +269,13 @@ export default function ExpensesPage() {
   }
 
   // Generate last 12 months for tabs
-  // Расходы этого человека (новые первыми): частые статьи → быстрые кнопки, последние машины → кнопки в окне.
+  // Расходы этого человека (новые первыми): частые статьи → быстрые кнопки.
   // Своих расходов почти нет (например, у владельца) — берём расходы всей команды.
   const byNew = [...expenses].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
   const own = byNew.filter(e => e.created_by === me)
   const mine = own.length >= 3 ? own : byNew
   const quickTitles = Object.entries(mine.slice(0, 60).reduce<Record<string, number>>((m, e) => { m[e.title] = (m[e.title] || 0) + 1; return m }, {}))
     .sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 4)
-  const recentCars = [...new Set(mine.map(e => e.car_id).filter(Boolean))].slice(0, 3).map(id => cars.find(c => c.id === id)).filter((c): c is Car => !!c)
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = subMonths(new Date(), i)
@@ -603,16 +624,6 @@ export default function ExpensesPage() {
                     ...cars.map(c => ({ value: c.id, label: `${c.make} ${c.model} ${c.plate}` })),
                   ]}
                 />
-                {!editExpense && recentCars.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {recentCars.map(c => (
-                      <button key={c.id} type="button" onClick={() => setForm(f => ({ ...f, car_id: c.id }))}
-                        className={`h-8 px-2.5 rounded-lg text-xs font-medium transition-colors ${form.car_id === c.id ? 'bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 ring-1 ring-indigo-200' : 'bg-gray-100 text-gray-600'}`}>
-                        {c.model} {c.plate}
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -621,9 +632,11 @@ export default function ExpensesPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Сумма ($)</label>
-                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder="0.00" className={inputCls} />
+                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder={reading ? 'Читаю чек…' : '0.00'} className={inputCls} />
                 </div>
               </div>
+
+              {(reading || readNote) && <p className={`-mt-2 text-xs ${reading ? 'text-gray-400' : readNote.startsWith('С фото') ? 'text-emerald-600' : 'text-amber-600'}`}>{reading ? 'Читаю сумму с фото…' : readNote}</p>}
 
               {/* File upload */}
               <div>

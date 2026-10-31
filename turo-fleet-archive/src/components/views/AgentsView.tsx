@@ -37,7 +37,7 @@ const TOOL_LABELS: Record<string, string> = {
   add_car_to_account: 'Подготовил перенос в аккаунт',
 }
 
-const AGENT_NAME: Record<string, string> = { bookkeeper: 'Учётчик', auditor: 'Ревизор', advisor: 'Советник' }
+const AGENT_NAME: Record<string, string> = { bookkeeper: 'Учётчик', auditor: 'Ревизор', advisor: 'Советник', reader: 'Чтение чека' }
 
 const STEP_ICON: Record<string, typeof Wrench> = { voice: Mic, photo: ImageIcon, tool: Wrench, confirm: Hand, write: CheckCircle2, error: AlertTriangle }
 
@@ -131,7 +131,7 @@ export default function AgentsView() {
         <div className="bg-white rounded-[18px] p-4 card-shadow border border-gray-100/80">
           <p className="flex items-center gap-2 text-sm font-semibold text-gray-900"><span className="w-8 h-8 rounded-xl bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 flex items-center justify-center"><MessageSquare size={16} /></span> Учётчик</p>
           <p className="text-xs text-gray-500 mt-2"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />Работает · сегодня {stats.today}{stats.waiting ? ` · ждут «Записать»: ${stats.waiting}` : ''}{stats.errors ? ` · ошибок: ${stats.errors}` : ''}</p>
-          <p className="text-xs text-gray-400 mt-1 tabular-nums">Claude за месяц ≈ ${stats.monthCost.toFixed(2)}</p>
+          <p className="text-xs text-gray-400 mt-1 tabular-nums">Claude за месяц (все агенты и чтение чеков) ≈ ${stats.monthCost.toFixed(2)}</p>
         </div>
         {([
           { key: 'auditor', icon: ShieldCheck, name: 'Ревизор', when: 'Каждый день ~10:00', text: 'проверяет, что данные сходятся; пишет, только если нашёл проблему' },
