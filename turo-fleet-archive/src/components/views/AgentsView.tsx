@@ -1,13 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { MessageSquare, ShieldCheck, Lightbulb, Mic, Image as ImageIcon, Wrench, CheckCircle2, AlertTriangle, Hand, Reply, RefreshCw, ArrowRight } from 'lucide-react'
+import { MessageSquare, ShieldCheck, Lightbulb, Play, Mic, Image as ImageIcon, Wrench, CheckCircle2, AlertTriangle, Hand, Reply, RefreshCw, ArrowRight } from 'lucide-react'
 import { format, parseISO, isToday, startOfMonth } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase'
+import { notify } from '@/lib/ui'
 
 // Настройки → Агенты (только админ): кто из агентов что делал — каждый запуск по шагам (agent_runs / agent_steps).
-// Сейчас работает «Учётчик» (Telegram-бот); «Ревизор» и «Советник» — следующие.
+// Учётчик — Telegram-бот; Ревизор (каждый день) и Советник (по понедельникам) — по расписанию Vercel Cron, можно запустить вручную.
 
 interface Run {
   id: string; agent: string; user_id: string | null; input: string | null; output: string | null
@@ -36,6 +37,8 @@ const TOOL_LABELS: Record<string, string> = {
   add_car_to_account: 'Подготовил перенос в аккаунт',
 }
 
+const AGENT_NAME: Record<string, string> = { bookkeeper: 'Учётчик', auditor: 'Ревизор', advisor: 'Советник' }
+
 const STEP_ICON: Record<string, typeof Wrench> = { voice: Mic, photo: ImageIcon, tool: Wrench, confirm: Hand, write: CheckCircle2, error: AlertTriangle }
 
 function stepText(s: Run['agent_steps'][number]) {
@@ -61,6 +64,8 @@ export default function AgentsView() {
   const [runs, setRuns] = useState<Run[] | null>(null)
   const [names, setNames] = useState<Record<string, string>>({})
   const [person, setPerson] = useState('')
+  const [busy, setBusy] = useState('')                      // какой агент запускаем вручную
+  const [noCron, setNoCron] = useState(false)              // в Vercel нет CRON_SECRET — расписание не сработает
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -74,15 +79,30 @@ export default function AgentsView() {
   }, [])
   // eslint-disable-next-line react-hooks/set-state-in-effect -- загрузка данных при открытии
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    fetch('/api/telegram/setup').then(r => (r.ok ? r.json() : null)).then(j => setNoCron(!!j?.missing?.includes('CRON_SECRET'))).catch(() => {})
+  }, [])
+
+  async function runNow(agent: 'auditor' | 'advisor') {
+    setBusy(agent)
+    const res = await fetch(`/api/agents/${agent}`, { method: 'POST' })
+    setBusy('')
+    if (!res.ok) { notify('Не получилось запустить', 'error'); return }
+    notify(agent === 'auditor' ? 'Ревизор проверил данные и написал в Telegram' : 'Советник прислал идеи в Telegram', 'success')
+    load()
+  }
 
   const shown = useMemo(() => (runs || []).filter(r => !person || r.user_id === person), [runs, person])
   const stats = useMemo(() => {
     const all = runs || []
     const month = all.filter(r => parseISO(r.created_at) >= startOfMonth(new Date()))
+    const book = all.filter(r => r.agent === 'bookkeeper')
+    const last = (agent: string) => all.find(r => r.agent === agent) || null
     return {
-      today: all.filter(r => isToday(parseISO(r.created_at))).length,
-      waiting: all.filter(r => r.status === 'waiting').length,
-      errors: all.filter(r => r.status === 'error' && isToday(parseISO(r.created_at))).length,
+      auditor: last('auditor'), advisor: last('advisor'),
+      today: book.filter(r => isToday(parseISO(r.created_at))).length,
+      waiting: book.filter(r => r.status === 'waiting').length,
+      errors: book.filter(r => r.status === 'error' && isToday(parseISO(r.created_at))).length,
       monthCost: month.reduce((s, r) => s + cost(r), 0),
     }
   }, [runs])
@@ -94,7 +114,7 @@ export default function AgentsView() {
     <div className="space-y-5 max-w-5xl">
       {/* Как это работает */}
       <div className="bg-white rounded-[18px] p-5 card-shadow border border-gray-100/80">
-        <p className="text-sm font-semibold text-gray-900 mb-3">Как работает агент</p>
+        <p className="text-sm font-semibold text-gray-900 mb-3">Как работает Учётчик</p>
         <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
           {['Сообщение в Telegram', 'Claude понимает, что произошло', 'Вызывает действия сайта', 'Отвечает / кнопка «Записать»', 'Запись в базе + «История»'].map((t, i, a) => (
             <span key={t} className="inline-flex items-center gap-2">
@@ -103,7 +123,7 @@ export default function AgentsView() {
             </span>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-3">Ниже — каждый такой запуск по шагам. Клеймы, простои, доходы и удаления агент только готовит: в базу они попадают после кнопки «Записать». Расходы пишет сразу (кнопка «Отменить» сутки).</p>
+        <p className="text-xs text-gray-400 mt-3">Ревизор и Советник просыпаются по расписанию, смотрят базу и пишут владельцам в Telegram — на их сообщение можно ответить боту, и Учётчик подготовит исправление. Ниже — каждый запуск по шагам. Клеймы, простои, доходы и удаления агент только готовит: в базу они попадают после кнопки «Записать». Расходы пишет сразу (кнопка «Отменить» сутки).</p>
       </div>
 
       {/* Агенты */}
@@ -113,12 +133,21 @@ export default function AgentsView() {
           <p className="text-xs text-gray-500 mt-2"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5" />Работает · сегодня {stats.today}{stats.waiting ? ` · ждут «Записать»: ${stats.waiting}` : ''}{stats.errors ? ` · ошибок: ${stats.errors}` : ''}</p>
           <p className="text-xs text-gray-400 mt-1 tabular-nums">Claude за месяц ≈ ${stats.monthCost.toFixed(2)}</p>
         </div>
-        {[{ icon: ShieldCheck, name: 'Ревизор', text: 'Каждый день проверяет, что данные сходятся' }, { icon: Lightbulb, name: 'Советник', text: 'Раз в неделю предлагает улучшения' }].map(a => (
-          <div key={a.name} className="bg-white rounded-[18px] p-4 card-shadow border border-gray-100/80 opacity-70">
-            <p className="flex items-center gap-2 text-sm font-semibold text-gray-900"><span className="w-8 h-8 rounded-xl bg-gray-100 text-gray-500 flex items-center justify-center"><a.icon size={16} /></span> {a.name}</p>
-            <p className="text-xs text-gray-500 mt-2"><span className="inline-block w-2 h-2 rounded-full bg-gray-300 mr-1.5" />Скоро · {a.text}</p>
-          </div>
-        ))}
+        {([
+          { key: 'auditor', icon: ShieldCheck, name: 'Ревизор', when: 'Каждый день ~10:00', text: 'проверяет, что данные сходятся; пишет, только если нашёл проблему' },
+          { key: 'advisor', icon: Lightbulb, name: 'Советник', when: 'По понедельникам ~9:00', text: 'присылает 2–3 идеи улучшений по фактам недели' },
+        ] as const).map(a => {
+          const last = stats[a.key]
+          return (
+            <div key={a.key} className="bg-white rounded-[18px] p-4 card-shadow border border-gray-100/80">
+              <p className="flex items-center gap-2 text-sm font-semibold text-gray-900"><span className="w-8 h-8 rounded-xl bg-indigo-50 text-[#4F46E5] dark:text-indigo-300 flex items-center justify-center"><a.icon size={16} /></span> {a.name}</p>
+              <p className="text-xs text-gray-500 mt-2"><span className={`inline-block w-2 h-2 rounded-full mr-1.5 ${noCron ? 'bg-amber-400' : 'bg-emerald-500'}`} />{a.when} · {a.text}</p>
+              <p className="text-xs text-gray-400 mt-1">{last ? `Последний запуск: ${format(parseISO(last.created_at), 'd MMM, HH:mm', { locale: ru })}${last.status === 'error' ? ' — ошибка' : ''}` : 'Ещё не запускался'}</p>
+              {noCron && <p className="text-xs text-amber-600 mt-1">Расписание не включено: в Vercel нет CRON_SECRET</p>}
+              <button type="button" disabled={!!busy} onClick={() => runNow(a.key)} className="btn-secondary inline-flex items-center gap-1.5 mt-3"><Play size={14} /> {busy === a.key ? 'Работает…' : 'Запустить сейчас'}</button>
+            </div>
+          )
+        })}
       </div>
 
       {/* Лента */}
@@ -137,7 +166,7 @@ export default function AgentsView() {
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-900 break-words">{r.input || (r.agent_steps.some(s => s.kind === 'photo') ? 'Фото чека' : r.agent_steps.some(s => s.kind === 'voice') ? 'Голосовое' : 'Сообщение')}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{format(parseISO(r.created_at), 'd MMM, HH:mm', { locale: ru })} · {r.user_id ? names[r.user_id] || 'Без имени' : '—'}{r.input_tokens ? ` · ≈ $${cost(r).toFixed(3)}` : ''}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{format(parseISO(r.created_at), 'd MMM, HH:mm', { locale: ru })} · {AGENT_NAME[r.agent] || r.agent}{r.user_id ? ` · ${names[r.user_id] || 'Без имени'}` : ''}{r.input_tokens ? ` · ≈ $${cost(r).toFixed(3)}` : ''}</p>
               </div>
               <span className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span>
             </div>

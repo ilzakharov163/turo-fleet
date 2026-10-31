@@ -6,6 +6,8 @@ export async function proxy(request: NextRequest) {
 
   // Telegram присылает сообщения боту без входа на сайт — адрес защищён своим секретом (app/api/telegram/route.ts)
   if (pathname === '/api/telegram') return NextResponse.next({ request })
+  // Агенты по расписанию: Vercel Cron приходит без входа — проверку (CRON_SECRET или админ) делает сам адрес
+  if (pathname.startsWith('/api/agents/')) return NextResponse.next({ request })
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''

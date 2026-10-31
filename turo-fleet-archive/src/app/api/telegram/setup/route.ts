@@ -1,15 +1,7 @@
-import { createClient } from '@/lib/supabase-server'
-import { serviceDb } from '@/lib/agent/server'
+import { isAdminRequest as isAdmin } from '@/lib/agent/admin'
 
 // Профиль → «Включить бота» (только админ): сайт сам говорит Telegram, куда присылать сообщения,
 // беря токен и секрет из переменных Vercel. GET — состояние, POST — подключить.
-
-async function isAdmin() {
-  const { data: { user } } = await (await createClient()).auth.getUser()
-  if (!user) return false
-  const { data } = await serviceDb().from('profiles').select('role').eq('id', user.id).maybeSingle()
-  return data?.role === 'admin'
-}
 
 async function tg(method: string, body?: Record<string, unknown>) {
   const res = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`, {
@@ -18,7 +10,7 @@ async function tg(method: string, body?: Record<string, unknown>) {
   return res.json().catch(() => null) as Promise<{ ok: boolean; result?: Record<string, unknown>; description?: string } | null>
 }
 
-const missing = () => ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_USERNAME', 'TELEGRAM_WEBHOOK_SECRET', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY'].filter(k => !process.env[k])
+const missing = () => ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_USERNAME', 'TELEGRAM_WEBHOOK_SECRET', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'CRON_SECRET'].filter(k => !process.env[k])
 
 export async function GET(request: Request) {
   if (!await isAdmin()) return Response.json({ error: 'Только для админа' }, { status: 403 })
@@ -38,7 +30,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   if (!await isAdmin()) return Response.json({ error: 'Только для админа' }, { status: 403 })
-  const lack = missing()
+  const lack = missing().filter(k => k !== 'CRON_SECRET')   // расписанию агентов он нужен, боту — нет
   if (lack.length) return Response.json({ error: `В Vercel не хватает: ${lack.join(', ')}` }, { status: 400 })
   const res = await tg('setWebhook', {
     url: `${new URL(request.url).origin}/api/telegram`,
