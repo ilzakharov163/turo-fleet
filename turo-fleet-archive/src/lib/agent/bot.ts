@@ -31,14 +31,19 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
   const actor = await actorByChat(db, chatId)
   if (!actor) return send(chatId, 'Я вас пока не знаю. Подключите Telegram на сайте: Настройки → Профиль → «Подключить Telegram».')
 
+  // Альбом (несколько фото одним сообщением) Telegram присылает по одному фото — собираем и обрабатываем один раз
+  const album = msg.media_group_id ? await collectAlbum(db, msg, chatId) : null
+  if (msg.media_group_id && !album) return
+  const caption = album ? album.caption : text
+
   // Повтор того же обновления от Telegram — пропускаем
-  const { data: run, error } = await db.from('agent_runs').insert({ agent: 'bookkeeper', update_id: update.update_id, user_id: actor.userId, chat_id: chatId, input: text || null }).select('id').single()
+  const { data: run, error } = await db.from('agent_runs').insert({ agent: 'bookkeeper', update_id: update.update_id, user_id: actor.userId, chat_id: chatId, input: caption || null }).select('id').single()
   if (error || !run) return
   const steps: Step[] = []
   await typing(chatId)
 
   try {
-    let said = text
+    let said = caption
     if (msg.voice || msg.audio) {
       const file = await download((msg.voice || msg.audio).file_id)
       const heard = file ? await transcribe(file.bytes) : null
@@ -51,17 +56,17 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
       said = [text, heard].filter(Boolean).join('\n')
     }
 
-    let photo: Photo | null = null
-    const image = msg.photo?.length ? msg.photo[msg.photo.length - 1] : msg.document?.mime_type?.startsWith('image/') ? msg.document : null
-    if (image) {
-      const file = await download(image.file_id)
-      if (file) photo = { bytes: file.bytes, mime: msg.document?.mime_type === 'image/png' ? 'image/png' : 'image/jpeg' }
-      steps.push({ kind: 'photo', text: photo ? 'фото чека' : 'фото не скачалось' })
+    const photos: Photo[] = []
+    for (const img of album?.images || imagesOf(msg)) {
+      const file = await download(img.fileId)
+      if (file) photos.push({ bytes: file.bytes, mime: img.mime })
     }
-    if (!said && !photo) return finish(db, run.id, steps, 'done', 'пустое сообщение')
+    const wanted = (album?.images || imagesOf(msg)).length
+    if (wanted) steps.push({ kind: 'photo', text: photos.length === wanted ? `фото чека: ${photos.length}` : `скачалось фото ${photos.length} из ${wanted}` })
+    if (!said && !photos.length) return finish(db, run.id, steps, 'done', 'пустое сообщение')
 
     const history = await loadHistory(db, chatId)
-    const result = await runBookkeeper(db, actor, { text: said, photo, history })
+    const result = await runBookkeeper(db, actor, { text: said, photos, history })
     steps.push(...result.steps)
 
     const buttons: TgButton[][] = result.undo.map(u => [{ text: `↩️ Отменить: ${u.label.slice(0, 40)}`, callback_data: `undo:${u.id}` }])
@@ -74,7 +79,7 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
     }
 
     await saveHistory(db, chatId, [...history,
-      { role: 'user', text: `${photo ? '[фото чека] ' : ''}${said}` },
+      { role: 'user', text: `${photos.length ? `[фото чека: ${photos.length}] ` : ''}${said}` },
       { role: 'assistant', text: result.reply + (result.pending.length ? `\n[ждёт «Записать»: ${result.pending.map(a => a.summary).join('; ')}]` : '') },
     ])
     if (actor.role !== 'admin' && result.undo.length) await notifyAdmins(db, actor, result.undo.map(u => u.label))
@@ -85,6 +90,30 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
     await send(chatId, 'Что-то пошло не так, ничего не записано. Попробуйте ещё раз через минуту.')
     steps.push({ kind: 'error', text: String(e).slice(0, 500) })
     return finish(db, run.id, steps, 'error', null)
+  }
+}
+
+// Картинки сообщения: фото (самое крупное) или файл-картинка
+function imagesOf(msg: Update): { fileId: string; mime: string }[] {
+  if (msg.photo?.length) return [{ fileId: msg.photo[msg.photo.length - 1].file_id, mime: 'image/jpeg' }]
+  if (msg.document?.mime_type?.startsWith('image/')) return [{ fileId: msg.document.file_id, mime: msg.document.mime_type === 'image/png' ? 'image/png' : 'image/jpeg' }]
+  return []
+}
+
+// Каждое фото альбома приходит отдельно. Запоминаем его, ждём остальные и отдаём весь альбом
+// только последнему по номеру сообщению (остальные — null).
+const ALBUM_WAIT_MS = 3000
+async function collectAlbum(db: SupabaseClient, msg: Update, chatId: number): Promise<{ images: { fileId: string; mime: string }[]; caption: string } | null> {
+  const img = imagesOf(msg)[0]
+  await db.from('agent_media').upsert({ chat_id: chatId, message_id: msg.message_id, media_group_id: String(msg.media_group_id), file_id: img?.fileId || null, mime: img?.mime || null, caption: (msg.caption || '').trim() || null })
+  await new Promise(r => setTimeout(r, ALBUM_WAIT_MS))
+  const { data } = await db.from('agent_media').select('message_id, file_id, mime, caption').eq('chat_id', chatId).eq('media_group_id', String(msg.media_group_id)).order('message_id')
+  const rows = (data || []) as { message_id: number; file_id: string | null; mime: string | null; caption: string | null }[]
+  if (!rows.length || rows[rows.length - 1].message_id !== msg.message_id) return null
+  await db.from('agent_media').delete().eq('chat_id', chatId).eq('media_group_id', String(msg.media_group_id))
+  return {
+    images: rows.filter(r => r.file_id).slice(0, 6).map(r => ({ fileId: r.file_id!, mime: r.mime || 'image/jpeg' })),
+    caption: rows.map(r => r.caption).filter(Boolean).join('\n'),
   }
 }
 

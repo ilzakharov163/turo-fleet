@@ -34,21 +34,22 @@ const anthropic = () => (client ||= new Anthropic())
 const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота']
 
 // Контекст инструментов для этого человека (и для нажатия «Записать» — тот же код)
-export async function toolCtx(db: SupabaseClient, actor: Actor, photo: Photo | null): Promise<ToolCtx> {
+export async function toolCtx(db: SupabaseClient, actor: Actor, photos: Photo[]): Promise<ToolCtx> {
   const today = todayLA()
-  return { db, actor, core: { db, log: logAs(db, { id: actor.userId, email: actor.email }, 'telegram') }, today, photo, cars: await loadFleet(db, today), undo: [] }
+  return { db, actor, core: { db, log: logAs(db, { id: actor.userId, email: actor.email }, 'telegram') }, today, photos, cars: await loadFleet(db, today), undo: [] }
 }
 
-export async function runBookkeeper(db: SupabaseClient, actor: Actor, opts: { text: string; photo: Photo | null; history: HistoryItem[] }): Promise<AgentResult> {
-  const ctx = await toolCtx(db, actor, opts.photo)
+export async function runBookkeeper(db: SupabaseClient, actor: Actor, opts: { text: string; photos: Photo[]; history: HistoryItem[] }): Promise<AgentResult> {
+  const ctx = await toolCtx(db, actor, opts.photos)
   const tools = ALL_TOOLS.filter(t => allowed(ctx, t))
   const steps: Step[] = []
   const pending: PendingAction[] = []
   const usage = { input: 0, output: 0 }
 
   const content: Anthropic.Beta.BetaContentBlockParam[] = []
-  if (opts.photo) content.push({ type: 'image', source: { type: 'base64', media_type: opts.photo.mime as 'image/jpeg', data: opts.photo.bytes.toString('base64') } })
-  content.push({ type: 'text', text: opts.text || (opts.photo ? 'Фото чека без подписи.' : '…') })
+  for (const p of opts.photos) content.push({ type: 'image', source: { type: 'base64', media_type: p.mime as 'image/jpeg', data: p.bytes.toString('base64') } })
+  const many = opts.photos.length > 1 ? ` (${opts.photos.length} фото одним сообщением)` : ''
+  content.push({ type: 'text', text: `${opts.text || (opts.photos.length ? 'Фото чека без подписи.' : '…')}${many}` })
 
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     ...opts.history.map(h => ({ role: h.role, content: h.text }) as Anthropic.Beta.BetaMessageParam),
@@ -117,7 +118,7 @@ async function runTool(ctx: ToolCtx, name: string, input: Input, pending: Pendin
 
 // Нажали «Записать»: выполняем подготовленные действия по порядку
 export async function runPending(db: SupabaseClient, actor: Actor, actions: PendingAction[]): Promise<string[]> {
-  const ctx = await toolCtx(db, actor, null)
+  const ctx = await toolCtx(db, actor, [])
   const out: string[] = []
   for (const a of actions) {
     const tool = toolByName(a.tool)

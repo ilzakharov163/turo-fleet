@@ -18,7 +18,7 @@ const addExpense: AgentTool = {
   mode: 'instant', perms: ['/expenses'],
   def: {
     name: 'add_expense',
-    description: 'Записать расход. Пишется сразу, человек может нажать «Отменить». Если к сообщению приложено фото чека — attach_receipt: true (чек прикрепится). Сумму бери из чека, если он есть; если сумма в подписи не совпадает с чеком — сначала спроси, не вызывай.',
+    description: 'Записать расход. Пишется сразу, человек может нажать «Отменить». Если к сообщению приложены фото чеков — attach_receipt: true (прикрепятся все фото сообщения: например, инвойс и кассовый чек одного расхода). Сумму бери из чека, если он есть; если сумма в подписи не совпадает с чеком — сначала спроси, не вызывай.',
     input_schema: {
       type: 'object',
       properties: {
@@ -40,12 +40,13 @@ const addExpense: AgentTool = {
     if (str(input.car_id) && !car) return 'Ошибка: такой машины нет в парке'
     const files: string[] = []
     if (input.attach_receipt) {
-      if (!ctx.photo) return 'Ошибка: в этом сообщении нет фото чека'
-      const ext = ctx.photo.mime === 'image/png' ? 'png' : 'jpg'
-      const path = `${ctx.actor.userId}/${Date.now()}_telegram.${ext}`
-      const { error } = await ctx.db.storage.from('receipts').upload(path, ctx.photo.bytes, { contentType: ctx.photo.mime })
-      if (error) return 'Ошибка: чек не загрузился, расход не записан'
-      files.push(path)
+      if (!ctx.photos.length) return 'Ошибка: в этом сообщении нет фото чека'
+      for (const [i, photo] of ctx.photos.entries()) {
+        const path = `${ctx.actor.userId}/${Date.now()}_telegram_${i + 1}.${photo.mime === 'image/png' ? 'png' : 'jpg'}`
+        const { error } = await ctx.db.storage.from('receipts').upload(path, photo.bytes, { contentType: photo.mime })
+        if (error) { if (files.length) await ctx.db.storage.from('receipts').remove(files); return 'Ошибка: чек не загрузился, расход не записан' }
+        files.push(path)
+      }
     }
     const date = dateOr(input.date, ctx.today)
     const { data, error } = await ctx.db.from('expenses').insert({
@@ -53,7 +54,7 @@ const addExpense: AgentTool = {
     }).select('id').single()
     if (error || !data) { if (files.length) await ctx.db.storage.from('receipts').remove(files); return 'Ошибка: расход не записался' }
     await ctx.core.log('create', 'expense', data.id, { title, amount })
-    const label = `${car ? carLabel(car) : 'без машины'} · ${title} · ${usd(amount)} · ${ru(date)}${files.length ? ' · чек прикреплён' : ''}`
+    const label = `${car ? carLabel(car) : 'без машины'} · ${title} · ${usd(amount)} · ${ru(date)}${files.length === 1 ? ' · чек прикреплён' : files.length ? ` · чеков прикреплено: ${files.length}` : ''}`
     ctx.undo.push({ kind: 'expense', id: data.id, label })
     return `Записано: ${label}`
   },
@@ -300,7 +301,7 @@ const setRevenue = (field: 'gross' | 'payment', what: string): AgentTool => ({
 })
 
 const setExpensePaid: AgentTool = {
-  mode: 'confirm', perms: ['/expenses'],
+  mode: 'confirm', perms: ['/expenses'], managersOnly: true,
   def: {
     name: 'set_expense_paid',
     description: 'Отметить расходы оплаченными (или снять отметку). expense_id бери из list_expenses.',
@@ -322,7 +323,7 @@ const setExpensePaid: AgentTool = {
 }
 
 const deleteExpense: AgentTool = {
-  mode: 'confirm', perms: ['/expenses'],
+  mode: 'confirm', perms: ['/expenses'], managersOnly: true,
   def: { name: 'delete_expense', description: 'Удалить расход (вместе с фото чека).', input_schema: { type: 'object', properties: { expense_id: { type: 'string' } }, required: ['expense_id'] } },
   async prepare(ctx, input) {
     const { data } = await ctx.db.from('expenses').select('title, amount, date').eq('id', str(input.expense_id)).maybeSingle()

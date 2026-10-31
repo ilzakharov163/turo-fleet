@@ -15,7 +15,7 @@ export interface ToolCtx {
   actor: Actor
   core: Ctx              // база + «История» от имени этого человека (через Telegram)
   today: string          // 'yyyy-MM-dd' по Лос-Анджелесу
-  photo: Photo | null    // фото из этого сообщения (чек)
+  photos: Photo[]        // фото из этого сообщения (чек; альбом — инвойс + кассовый чек)
   cars: FleetCar[]
   undo: { kind: 'expense'; id: string; label: string }[]   // что записано сразу — для кнопки «Отменить»
 }
@@ -26,13 +26,15 @@ export interface AgentTool {
   def: Anthropic.Beta.BetaTool
   perms: string[]
   mode: 'read' | 'instant' | 'confirm'
+  managersOnly?: boolean   // не для сотрудников (role employee): им бот только записывает расходы
   // confirm: проверить и описать действие для кнопки (ничего не пишет)
   prepare?: (ctx: ToolCtx, input: Input) => Promise<{ summary: string } | { error: string }>
   // read/instant — выполнить сейчас; confirm — после нажатия «Записать». Возвращает текст результата.
   run: (ctx: ToolCtx, input: Input) => Promise<string>
 }
 
-export const allowed = (ctx: Pick<ToolCtx, 'actor'>, t: Pick<AgentTool, 'perms'>) => canAny(ctx.actor, t.perms)
+export const allowed = (ctx: Pick<ToolCtx, 'actor'>, t: Pick<AgentTool, 'perms' | 'managersOnly'>) =>
+  canAny(ctx.actor, t.perms) && !(t.managersOnly && ctx.actor.role === 'employee')
 
 // ── Парк для подсказки агенту ──
 

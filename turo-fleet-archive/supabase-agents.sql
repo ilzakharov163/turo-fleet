@@ -59,6 +59,19 @@ create table if not exists public.agent_steps (
   data jsonb,
   created_at timestamptz not null default now()
 );
+-- Фото альбома (несколько фото одним сообщением) — пока собираются все части
+create table if not exists public.agent_media (
+  chat_id bigint not null,
+  message_id bigint not null,
+  media_group_id text not null,
+  file_id text,
+  mime text,
+  caption text,
+  created_at timestamptz not null default now(),
+  primary key (chat_id, message_id)
+);
+alter table public.agent_media enable row level security;
+
 create index if not exists agent_steps_run on public.agent_steps(run_id, id);
 create index if not exists agent_runs_created on public.agent_runs(created_at desc);
 

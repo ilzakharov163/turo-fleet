@@ -41,7 +41,7 @@ const listClaims: AgentTool = {
 }
 
 const listExpenses: AgentTool = {
-  mode: 'read', perms: ['/expenses', '/dashboard', '/analytics'],
+  mode: 'read', perms: ['/expenses', '/dashboard', '/analytics'], managersOnly: true,
   def: {
     name: 'list_expenses',
     description: 'Расходы за месяц (по умолчанию текущий): по машине, статье или слову, только неоплаченные. Возвращает expense_id и итог.',
