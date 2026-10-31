@@ -10,7 +10,7 @@ import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
 import { ask, notify } from '@/lib/ui'
 import { canAny, useAccess } from '@/lib/access'
-import { unlistByClaim } from '@/lib/unlist'
+import { unlistByClaim, claimBlockOn, completeClaim, type Block } from '@/lib/unlist'
 import { loadPlateHistory, normPlate, oldPlatesByCar } from '@/lib/plates'
 import PlateHistory from '@/components/PlateHistory'
 import { putClaimPayment, dropClaimPayment, type ClaimKind } from '@/lib/claimIncome'
@@ -69,8 +69,6 @@ const short = (iso: string) => format(parseISO(iso), 'd MMM', { locale: ru })
 function doneDate(c: Claim): string | null {
   return c.completed_date || c.opened_date || c.created_at || null
 }
-
-interface Block { id: string; start_date: string; end_date: string | null; reason: string | null }
 
 function CarTitle({ c, acc }: { c: Claim; acc?: CarAccount | null }) {
   return c.car ? (
@@ -253,14 +251,7 @@ export default function ClaimsView() {
 
 
   // Текущий простой машины на дату: сначала тот, где в причине номер этого клейма
-  async function openBlockFor(c: Claim, date: string): Promise<Block | null> {
-    if (!c.car_id) return null
-    const { data } = await createClient().from('car_blocks').select('id, start_date, end_date, reason').eq('car_id', c.car_id)
-      .lte('start_date', date).or(`end_date.is.null,end_date.gte.${date}`)
-    const list = (data || []) as Block[]
-    const num = c.claim_number?.trim().toLowerCase()
-    return list.find(b => num && (b.reason || '').toLowerCase().includes(num)) || list[0] || null
-  }
+  const openBlockFor = (c: Claim, date: string): Promise<Block | null> => claimBlockOn(c, date)
 
   async function openFinish(c: Claim) {
     const date = today()
@@ -277,23 +268,9 @@ export default function ClaimsView() {
     if (!finish) return
     const { c, date, back, block } = finish
     setFinish({ ...finish, busy: true })
-    const supabase = createClient()
-    const update = { status: 'done' as const, completed_date: date, ...(back && block ? { still_listed: true } : {}) }
-    const { error } = await supabase.from('claims').update(update).eq('id', c.id)
-    if (error) { setFinish({ ...finish, busy: false }); return }
-    await log('update', 'claim', c.id, update)
-    if (back && block && c.car_id) {
-      // В работе с выбранной даты: простой заканчивается накануне (начался в тот же день — простоя не было)
-      const dayBefore = format(subDays(parseISO(date), 1), 'yyyy-MM-dd')
-      const res = block.start_date >= date
-        ? await supabase.from('car_blocks').delete().eq('id', block.id)
-        : await supabase.from('car_blocks').update({ end_date: dayBefore }).eq('id', block.id)
-      if (!res.error) {
-        await supabase.from('cars').update({ status: 'active', inactive_reason: null, updated_at: new Date().toISOString() }).eq('id', c.car_id)
-        await log('status_change', 'car', c.car_id, { status: 'active', from_claim: c.id, block_id: block.id, end_date: block.start_date >= date ? null : dayBefore })
-      }
-    }
-    notify(back && block ? `Клейм завершён, машина в работе с ${format(parseISO(date), 'd MMMM', { locale: ru })}` : 'Клейм завершён', 'success')
+    const res = await completeClaim({ claim: c, date, back, block })
+    if (!res) { setFinish({ ...finish, busy: false }); return }
+    notify(res === 'back' ? `Клейм завершён, машина в работе с ${format(parseISO(date), 'd MMMM', { locale: ru })}` : 'Клейм завершён', 'success')
     setFinish(null)
     load()
   }

@@ -3,10 +3,8 @@
 import { useState } from 'react'
 import { ShieldAlert, PauseCircle } from 'lucide-react'
 import { format } from 'date-fns'
-import { createClient } from '@/lib/supabase'
-import { log } from '@/lib/logger'
 import { notify } from '@/lib/ui'
-import { unlistByClaim } from '@/lib/unlist'
+import { putIdle } from '@/lib/unlist'
 import { Modal, FormField, inputCls, ModalActions, CancelButton } from '@/components/ui/PageShell'
 import DatePicker from '@/components/ui/DatePicker'
 import { Car } from '@/types'
@@ -35,44 +33,13 @@ export default function UnlistSheet({ car, alreadyIdle, onClose, onDone }: {
     e.preventDefault()
     if (!canSave || busy) return
     setBusy(true); setError('')
-    const supabase = createClient()
-    const num = claimNumber.trim()
-    const desc = description.trim()
-
-    if (reason === 'claim') {
-      // Такой номер уже есть? Открытый клейм этой же машины (она каталась с клеймом) — снимаем по нему
-      const { data: dup } = await supabase.from('claims').select('id, car_id, status, description, claim_number').ilike('claim_number', num.replace(/[%_\\]/g, m => `\\${m}`)).limit(1)
-      const ex = dup?.[0]
-      if (ex && (ex.car_id !== car.id || ex.status === 'done')) {
-        setBusy(false)
-        setError(ex.car_id !== car.id ? `Клейм № ${num} уже есть у другой машины` : `Клейм № ${num} уже завершён`)
-        return
-      }
-      if (ex) {
-        const ok = await unlistByClaim({ carId: car.id, claimId: ex.id, claimNumber: ex.claim_number || num, description: desc || ex.description, date, endDate: endDate || null })
-        if (desc && !ex.description) await supabase.from('claims').update({ description: desc }).eq('id', ex.id)
-        setBusy(false)
-        if (!ok) return
-        notify(`Машина в простое по клейму № ${ex.claim_number || num}`, 'success')
-        onDone()
-        return
-      }
-      const { data, error } = await supabase.from('claims').insert({
-        car_id: car.id, status: 'waiting', opened_date: date, claim_number: num, description: desc || null, still_listed: false,
-      }).select('id').single()
-      if (error) { setBusy(false); return }
-      await log('create', 'claim', data?.id || '', { car_id: car.id, claim_number: num, opened_date: date, from: 'unlist' })
-    }
-
-    if (!alreadyIdle) {
-      const blockReason = reason === 'claim' ? `Клейм № ${num}${desc ? ` — ${desc}` : ''}` : otherReason.trim()
-      const { data, error } = await supabase.from('car_blocks').insert({ car_id: car.id, start_date: date, end_date: endDate || null, reason: blockReason }).select('id').single()
-      if (error) { setBusy(false); return }
-      await log('create', 'car_block', data?.id || '', { car_id: car.id, start_date: date, end_date: endDate || null, reason: blockReason })
-    }
-
+    const res = await putIdle({
+      carId: car.id, date, endDate: endDate || null, alreadyIdle,
+      ...(reason === 'claim' ? { claimNumber, description } : { otherReason }),
+    })
     setBusy(false)
-    notify(reason === 'claim' ? `В простое, клейм № ${num} создан` : 'Машина в простое', 'success')
+    if (!res.ok) { if (res.text !== 'Не сохранилось') setError(res.text); return }
+    notify(res.text, 'success')
     onDone()
   }
 

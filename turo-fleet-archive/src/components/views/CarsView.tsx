@@ -14,6 +14,7 @@ import Popover from '@/components/ui/Popover'
 import { loadCarAccounts, type CarAccount } from '@/lib/carAccounts'
 import { hasCyrillic, latinPlate } from '@/lib/plates'
 import { restoreCar } from '@/lib/fleet'
+import { endIdle } from '@/lib/unlist'
 import { canAny, useAccess } from '@/lib/access'
 import { ask, notify } from '@/lib/ui'
 import { ru } from 'date-fns/locale'
@@ -134,7 +135,6 @@ export default function CarsView() {
     const supabase = createClient()
     const current = idleOf(inactiveModal.id)
     const newStatus = current ? 'active' : 'inactive'
-    const yesterday = format(new Date(Date.now() - 86400000), 'yyyy-MM-dd')
 
     if (newStatus === 'inactive') {
       const { error } = await supabase.from('car_blocks').insert({
@@ -146,10 +146,9 @@ export default function CarsView() {
       if (error) return
     } else if (current) {
       // Вернуть в работу: простой заканчивается вчера (если начался сегодня — простоя не было)
-      const { error } = current.start_date >= today
-        ? await supabase.from('car_blocks').delete().eq('id', current.id)
-        : await supabase.from('car_blocks').update({ end_date: yesterday }).eq('id', current.id)
-      if (error) return
+      if (!await endIdle({ carId: inactiveModal.id, block: current, date: today })) return
+      setInactiveModal(null); setInactiveReason(''); setInactiveDate(''); setInactiveEndDate(''); load()
+      return
     }
 
     await supabase.from('cars').update({ status: newStatus, inactive_reason: newStatus === 'inactive' ? inactiveReason : null, updated_at: new Date().toISOString() }).eq('id', inactiveModal.id)
