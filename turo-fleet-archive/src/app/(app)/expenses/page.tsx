@@ -247,8 +247,11 @@ export default function ExpensesPage() {
   }
 
   // Generate last 12 months for tabs
-  // Расходы этого человека (новые первыми): частые статьи → быстрые кнопки, последние машины → кнопки в окне
-  const mine = expenses.filter(e => !me || e.created_by === me).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  // Расходы этого человека (новые первыми): частые статьи → быстрые кнопки, последние машины → кнопки в окне.
+  // Своих расходов почти нет (например, у владельца) — берём расходы всей команды.
+  const byNew = [...expenses].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+  const own = byNew.filter(e => e.created_by === me)
+  const mine = own.length >= 3 ? own : byNew
   const quickTitles = Object.entries(mine.slice(0, 60).reduce<Record<string, number>>((m, e) => { m[e.title] = (m[e.title] || 0) + 1; return m }, {}))
     .sort((a, b) => b[1] - a[1]).map(([t]) => t).slice(0, 4)
   const recentCars = [...new Set(mine.map(e => e.car_id).filter(Boolean))].slice(0, 3).map(id => cars.find(c => c.id === id)).filter((c): c is Car => !!c)
