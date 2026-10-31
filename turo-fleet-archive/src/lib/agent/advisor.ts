@@ -38,13 +38,14 @@ export async function runAdvisor(db: SupabaseClient) {
     const log = (logRes.data || []) as { action: string; entity_type: string; user_email: string; details: Record<string, unknown> | null }[]
     const count = <T,>(xs: T[], key: (x: T) => string) => Object.entries(xs.reduce<Record<string, number>>((m, x) => { const k = key(x); m[k] = (m[k] || 0) + 1; return m }, {})).sort((a, b) => b[1] - a[1])
     const viaTg = log.filter(l => l.details?.via === 'telegram').length
-    const runs = (runsRes.data || []) as { input: string | null; output: string | null; status: string }[]
+    const runs = ((runsRes.data || []) as { input: string | null; output: string | null; status: string }[]).filter(r => r.input !== '«Записать»')
     const failed = runs.filter(r => r.status === 'error' || /не могу|не умею|нет доступа|ошибка/i.test(r.output || ''))
     const exps = (expRes.data || []) as { title: string; amount: number; files: string[] | null; car_id: string | null }[]
 
     const facts = [
       `Действия на сайте и в боте за 7 дней: ${log.length} (из них через Telegram: ${viaTg}).`,
-      `По типам: ${count(log, l => `${l.entity_type}/${l.action}`).slice(0, 12).map(([k, v]) => `${k} ${v}`).join(', ') || 'нет'}.`,
+      `По типам (entity/action): ${count(log, l => `${l.entity_type}/${l.action}`).slice(0, 12).map(([k, v]) => `${k} ${v}`).join(', ') || 'нет'}.`,
+      'Пояснение: car/status_change пишется автоматически, когда машину возвращают в работу (закрывают простой) — это не отдельное ручное действие; revenue_entry/update — сохранение ячейки в «Доходах».',
       `По людям: ${count(log, l => l.user_email.split('@')[0]).map(([k, v]) => `${k} ${v}`).join(', ') || 'нет'}.`,
       `Сообщений боту: ${runs.length}, не получилось или «не умею»: ${failed.length}.`,
       ...failed.slice(0, 8).map(r => `  — «${(r.input || '').slice(0, 120)}» → «${(r.output || '').slice(0, 160)}»`),

@@ -54,6 +54,7 @@ export async function handleUpdate(db: SupabaseClient, update: Update) {
       steps.push({ kind: 'voice', text: heard })
       await send(chatId, `🎙 <i>${esc(heard)}</i>`)
       said = [text, heard].filter(Boolean).join('\n')
+      await db.from('agent_runs').update({ input: `🎙 ${said}` }).eq('id', run.id)   // в журнал — что сказали голосом
     }
 
     const photos: Photo[] = []
