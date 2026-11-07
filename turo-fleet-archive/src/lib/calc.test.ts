@@ -1,7 +1,7 @@
 // Проверка формул: npm test
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit, inFleet, staffCost } from './calc.ts'
+import { calcSalary, idleDaysInMonth, calcEntry, monthExpensesTotal, monthProfit, inFleet, staffCost, workerCarry } from './calc.ts'
 
 test('зарплата: < 14 дней простоя → 150, ≥ 14 → 75, весь месяц → 0', () => {
   assert.equal(calcSalary(0, 31), 150)
@@ -63,4 +63,13 @@ test('затраты на сотрудника: вычеты только из �
   assert.equal(staffCost(1200, 3450, 520), 1200 + 3450 - 520)
   assert.equal(staffCost(1200, 300, 520), 1200)      // вычесть больше зарплаты нельзя
   assert.equal(staffCost(1200, 3450), 4650)
+})
+
+test('остаток у сотрудника переходит на следующий месяц (считаем с октября 2026)', () => {
+  const t = { '2026-08': 0, '2026-09': 1000, '2026-10': 2100, '2026-11': 500 }
+  const sp = { '2026-08': 1347.04, '2026-09': 915.4, '2026-10': 2083.37, '2026-11': 576.2 }
+  assert.equal(workerCarry(t, sp, '2026-10'), 0)          // до октября не считаем
+  assert.equal(workerCarry(t, sp, '2026-11'), 16.63)      // октябрь: 2100 − 2083.37
+  assert.equal(workerCarry(t, sp, '2026-12'), -59.57)     // + ноябрь: 500 − 576.20
+  assert.equal(workerCarry({}, {}, '2026-12'), 0)
 })

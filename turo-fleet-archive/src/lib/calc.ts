@@ -64,3 +64,16 @@ export const staffCost = (salary1: number, salary2: number, deductions = 0) =>
 export function monthProfit(entries: RevenueEntry[], expenses: MonthExpenses | null | undefined, payments: { amount: number }[], deductions = 0) {
   return entries.reduce((s, e) => s + calcEntry(e).net, 0) - monthExpensesTotal(expenses) + appliedDeductions(num(expenses?.salary2), deductions) - payments.reduce((s, p) => s + num(p.amount), 0)
 }
+
+// ── Деньги на расходы у сотрудника ──
+// Переводы сотруднику на расходы (revenue_month_expenses.salary1) записаны полностью с октября 2026 — с него и считаем остаток.
+export const WORKER_BALANCE_FROM = '2026-10'
+
+// Остаток, перешедший в месяц month ('yyyy-MM') из прошлых месяцев: Σ (переведено − потрачено) с WORKER_BALANCE_FROM до month.
+// > 0 — у сотрудника остались ваши деньги, < 0 — он потратил больше, вы ему должны.
+export function workerCarry(transfers: Record<string, number>, spent: Record<string, number>, month: string, from = WORKER_BALANCE_FROM) {
+  const months = new Set([...Object.keys(transfers), ...Object.keys(spent)])
+  let carry = 0
+  for (const m of months) if (m >= from && m < month) carry += num(transfers[m]) - num(spent[m])
+  return Math.round(carry * 100) / 100
+}

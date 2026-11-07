@@ -1,4 +1,4 @@
-import { calcEntry, monthProfit, num, type RevenueEntry, type MonthExpenses, type OtherItem } from '../calc'
+import { calcEntry, monthProfit, num, workerCarry, WORKER_BALANCE_FROM, type RevenueEntry, type MonthExpenses, type OtherItem } from '../calc'
 import { carLabel, carOf, money, monthOr, str, usd, type AgentTool, type FleetCar, type Input, type ToolCtx } from './tools'
 
 // «Доходы»: ремонт и прочее по машине, затраты на сотрудника, расходы компании, платежи, аккаунты, история.
@@ -70,14 +70,24 @@ const incomeCar: AgentTool = {
 
 const monthCosts: AgentTool = {
   mode: 'read', perms: P,
-  def: { name: 'month_costs', description: 'Расходы месяца в «Доходах»: затраты на сотрудника (расходы и зарплата), расходы компании по пунктам и платежи (payment_id) по группам.', input_schema: { type: 'object', properties: { month: { type: 'string' } } } },
+  def: { name: 'month_costs', description: 'Расходы месяца в «Доходах»: затраты на сотрудника (расходы и зарплата), сколько денег на расходы осталось у сотрудника (с переносом с прошлых месяцев), расходы компании по пунктам и платежи (payment_id) по группам.', input_schema: { type: 'object', properties: { month: { type: 'string' } } } },
   async run(ctx, input) {
     const period = monthOr(input.month, ctx.today)
     const m = await monthExp(ctx, period)
+    // Деньги на расходы у сотрудника: остаток с прошлых месяцев + переведено − потрачено
+    const [trRes, spRes] = await Promise.all([
+      ctx.db.from('revenue_month_expenses').select('period, salary1'),
+      ctx.db.from('expenses').select('date, amount').gte('date', `${WORKER_BALANCE_FROM}-01`),
+    ])
+    const tr = Object.fromEntries(((trRes.data || []) as { period: string; salary1: number }[]).map(x => [x.period.slice(0, 7), num(x.salary1)]))
+    const sp = ((spRes.data || []) as { date: string; amount: number }[]).reduce<Record<string, number>>((a, e) => { const k = e.date.slice(0, 7); a[k] = (a[k] || 0) + num(e.amount); return a }, {})
+    const carry = workerCarry(tr, sp, ym(period))
+    const left = carry + num(tr[ym(period)]) - num(sp[ym(period)])
     const { data } = await ctx.db.from('revenue_payments').select('id, grp, day, name, amount').eq('period', period).order('grp').order('sort')
     const pays = (data || []) as { id: string; grp: string; day: number | null; name: string; amount: number }[]
     return [
       `${ym(period)}`, `Затраты на сотрудника: расходы ${usd(m.salary1)}, зарплата ${usd(m.salary2)}`,
+      `Деньги на расходы у сотрудника (учёт с ${WORKER_BALANCE_FROM}): с прошлых месяцев ${usd(carry)}, переведено ${usd(num(tr[ym(period)]))}, потрачено ${usd(Math.round(num(sp[ym(period)]) * 100) / 100)} → ${left >= 0 ? `у сотрудника ваши ${usd(Math.round(left * 100) / 100)}` : `вы должны сотруднику ${usd(Math.round(-left * 100) / 100)}`}`,
       `Расходы компании: ${m.items?.length ? m.items.map(i => `${i.desc || '—'} ${usd(num(i.amount))}`).join('; ') : 'нет'}`,
       `Платежи (${pays.length}, ${usd(pays.reduce((s, p) => s + num(p.amount), 0))}):`,
       ...pays.map(p => `  payment_id ${p.id} · ${p.grp} · ${p.name || '—'} · ${usd(num(p.amount))}${p.day ? ` · ${p.day} число` : ''}`),

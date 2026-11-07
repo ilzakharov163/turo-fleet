@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { recordStickerChange } from '@/lib/core'
 import { log } from '@/lib/logger'
 import { Car } from '@/types'
-import { Plus, X, Check, Tag, History, ArrowRight } from 'lucide-react'
+import { Plus, X, Check, Tag, History, ArrowRight, Pencil } from 'lucide-react'
 import { format, parseISO, addDays, differenceInCalendarDays } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import DatePicker from '@/components/ui/DatePicker'
@@ -97,6 +97,7 @@ export default function StickersView() {
   const [customDate, setCustomDate] = useState('')
   const [newPlate, setNewPlate] = useState('')
   const [saving, setSaving] = useState(false)
+  const [editCh, setEditCh] = useState<{ ch: StickerChange; date: string } | null>(null)   // исправить дату замены
 
   const [openHistory, setOpenHistory] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
@@ -183,6 +184,20 @@ export default function StickersView() {
     const supabase = createClient()
     await supabase.from('sticker_changes').delete().eq('id', ch.id)
     await log('delete', 'sticker_change', ch.id, { car_id: ch.car_id, changed_date: ch.changed_date })
+    load()
+  }
+
+  // Исправить дату замены (поставили не тот день) — срок следующей замены пересчитается сам
+  async function saveChangeDate(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editCh?.date || saving) return
+    setSaving(true)
+    const { error } = await createClient().from('sticker_changes').update({ changed_date: editCh.date }).eq('id', editCh.ch.id)
+    setSaving(false)
+    if (error) return
+    await log('update', 'sticker_change', editCh.ch.id, { car_id: editCh.ch.car_id, changed_date_from: editCh.ch.changed_date, changed_date_to: editCh.date })
+    notify(`Дата замены: ${fmt(editCh.date)}`, 'success')
+    setEditCh(null)
     load()
   }
 
@@ -283,7 +298,11 @@ export default function StickersView() {
                     <div className="text-xs text-gray-500 truncate">
                       <span className={`font-semibold ${st.text}`}>{shortLabel(r)}</span>
                       <span className="text-gray-300"> · </span>
-                      {r.last ? <>замена {fmtShort(r.last)}</> : 'замен не было'}
+                      {r.last && r.history[0] ? (
+                        <button type="button" onClick={() => setEditCh({ ch: r.history[0], date: r.history[0].changed_date })} title="Исправить дату замены" className="inline-flex items-center gap-0.5 underline decoration-dotted underline-offset-2 hover:text-gray-800">
+                          замена {fmtShort(r.last)} <Pencil size={10} className="text-gray-400" />
+                        </button>
+                      ) : r.last ? <>замена {fmtShort(r.last)}</> : 'замен не было'}
                       {r.next && <span className="sm:hidden"><span className="text-gray-300"> · </span>до {fmtShort(r.next)}</span>}
                     </div>
                   </div>
@@ -320,7 +339,9 @@ export default function StickersView() {
                       <span className="text-xs text-gray-400">Замен ещё не было</span>
                     ) : r.history.map(h => (
                       <span key={h.id} className="inline-flex items-center gap-1 text-xs text-gray-600 bg-white border border-gray-200 rounded-full pl-2.5 pr-1 py-0.5">
-                        {fmt(h.changed_date)}
+                        <button type="button" onClick={() => setEditCh({ ch: h, date: h.changed_date })} title="Исправить дату" className="inline-flex items-center gap-1 hover:text-gray-900">
+                          {fmt(h.changed_date)} <Pencil size={10} className="text-gray-400" />
+                        </button>
                         {h.old_plate && h.new_plate && h.old_plate !== h.new_plate && (
                           <span className="text-gray-400">· {h.old_plate} → <span className="text-gray-700 font-medium">{h.new_plate}</span></span>
                         )}
@@ -371,6 +392,24 @@ export default function StickersView() {
                   Добавить{selected.length > 0 ? ` (${selected.length})` : ''}
                 </button>
                 <button type="button" onClick={() => setShowAdd(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Исправить дату замены */}
+      {editCh && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={e => { if (e.target === e.currentTarget) setEditCh(null) }}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
+            <h2 className="text-lg font-semibold mb-1">Дата замены</h2>
+            <p className="text-sm text-gray-400 mb-4">{carName(entries.find(x => x.car_id === editCh.ch.car_id)?.car)} · было {fmt(editCh.ch.changed_date)}</p>
+            <form onSubmit={saveChangeDate} className="space-y-4">
+              <DatePicker value={editCh.date} onChange={val => setEditCh({ ...editCh, date: val })} />
+              <p className="text-xs text-gray-400">Следующая замена пересчитается от новой даты (+{INTERVAL_DAYS} дней).</p>
+              <div className="flex gap-3 pt-1">
+                <button type="submit" disabled={saving || !editCh.date} className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium transition-colors">{saving ? 'Сохраняю…' : 'Сохранить'}</button>
+                <button type="button" onClick={() => setEditCh(null)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-medium transition-colors">Отмена</button>
               </div>
             </form>
           </div>

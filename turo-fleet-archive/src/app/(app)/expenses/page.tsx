@@ -12,6 +12,7 @@ import DatePicker from '@/components/ui/DatePicker'
 import MonthPicker from '@/components/ui/MonthPicker'
 import Popover from '@/components/ui/Popover'
 import { notify, ask } from '@/lib/ui'
+import { workerCarry, WORKER_BALANCE_FROM } from '@/lib/calc'
 import { inputCls } from '@/components/ui/PageShell'
 
 const usd = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -32,6 +33,8 @@ export default function ExpensesPage() {
   // Переведено сотруднику на расходы по месяцам ('yyyy-MM' → $) — поле «Расходы» в «Доходы → Расходы» (revenue_month_expenses.salary1).
   // null — нет доступа к «Доходам», карточку не показываем.
   const [transferred, setTransferred] = useState<Record<string, number> | null>(null)
+  // Потрачено по месяцам с начала учёта остатка (WORKER_BALANCE_FROM) — для «остатка с прошлых месяцев»
+  const [spentByMonth, setSpentByMonth] = useState<Record<string, number>>({})
   const [filterCats, setFilterCats] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [noReceipt, setNoReceipt] = useState(false)
@@ -48,13 +51,15 @@ export default function ExpensesPage() {
   const load = useCallback(async () => {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data }) => setMe(data.user?.id || null))
-    const [carsRes, expRes, trRes] = await Promise.all([
+    const [carsRes, expRes, trRes, spentRes] = await Promise.all([
       supabase.from('cars').select('*').order('make'),
       // Только последние 12 месяцев — столько, сколько вкладок месяцев
       supabase.from('expenses').select('*, car:cars(make,model,plate)').gte('date', format(startOfMonth(subMonths(new Date(), 11)), 'yyyy-MM-dd'))
         .order('date', { ascending: true }).order('created_at', { ascending: true }),
       supabase.from('revenue_month_expenses').select('period, salary1'),
+      supabase.from('expenses').select('date, amount').gte('date', `${WORKER_BALANCE_FROM}-01`),
     ])
+    setSpentByMonth(((spentRes.data || []) as { date: string; amount: number }[]).reduce<Record<string, number>>((m, e) => { const k = e.date.slice(0, 7); m[k] = (m[k] || 0) + Number(e.amount); return m }, {}))
     setTransferred(trRes.error ? null : Object.fromEntries((trRes.data || []).map(x => [String(x.period).slice(0, 7), Number(x.salary1) || 0])))
     setCars(carsRes.data || [])
     setExpenses(expRes.data as Expense[] || [])
@@ -303,7 +308,9 @@ export default function ExpensesPage() {
   const monthKeys = filterMonth === 'all' ? months.map(m => m.value) : [filterMonth]
   const transferredSum = transferred ? monthKeys.reduce((s, k) => s + (transferred[k] || 0), 0) : 0
   const spentAll = expenses.filter(e => monthKeys.some(k => e.date.startsWith(k))).reduce((s, e) => s + Number(e.amount), 0)
-  const transferLeft = transferredSum - spentAll
+  // Остаток с прошлых месяцев переходит в выбранный месяц (за «12 месяцев» — без переноса)
+  const carry = transferred && filterMonth !== 'all' ? workerCarry(transferred, spentByMonth, filterMonth) : 0
+  const transferLeft = carry + transferredSum - spentAll
   const selectedTotal = filtered.filter(e => selected.has(e.id)).reduce((s, e) => s + Number(e.amount), 0)
   const allSelected = filtered.length > 0 && filtered.every(e => selected.has(e.id))
   function toggleSelectAll() {
@@ -421,8 +428,11 @@ export default function ExpensesPage() {
             <a href={`/income?view=expenses${filterMonth === 'all' ? '' : `&month=${filterMonth}`}`} className="rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 px-3.5 py-2.5 hover:bg-indigo-50" title="Меняется в «Доходы → Расходы → Затраты на сотрудника → Расходы»">
               <p className="text-[11px] text-indigo-500 dark:text-indigo-300">Переведено сотруднику</p>
               <p className="text-lg font-bold text-indigo-700 dark:text-indigo-200 tabular-nums">{usd(transferredSum)}</p>
-              {(transferredSum > 0 || spentAll > 0) && (
-                <p className={`text-[11px] tabular-nums ${transferLeft >= 0 ? 'text-gray-500' : 'text-rose-500'}`}>{transferLeft >= 0 ? `остаток ${usd(transferLeft)}` : `потрачено больше на ${usd(-transferLeft)}`}</p>
+              {carry !== 0 && (
+                <p className="text-[11px] tabular-nums text-gray-500">{carry > 0 ? `+ остаток с прошлых мес. ${usd(carry)}` : `− долг с прошлых мес. ${usd(-carry)}`}</p>
+              )}
+              {(transferredSum > 0 || spentAll > 0 || carry !== 0) && (
+                <p className={`text-[11px] tabular-nums font-medium ${transferLeft >= 0 ? 'text-gray-600' : 'text-rose-500'}`}>{transferLeft >= 0 ? `у сотрудника ваши ${usd(transferLeft)}` : `вы должны сотруднику ${usd(-transferLeft)}`}</p>
               )}
             </a>
           )}
