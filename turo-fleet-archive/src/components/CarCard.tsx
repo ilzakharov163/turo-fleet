@@ -87,17 +87,20 @@ export default function CarCard({ car, onClose, onChanged }: { car: Car; onClose
 
   const show = (keys: string[]) => canAny(access, keys)
 
-  // «Продана или разбита»: со следующего месяца машины нет нигде; в этом месяце остаётся
+  // «Продана или разбита»: с этого месяца (уже не работала) или со следующего (в этом месяце ещё работала) машины нет нигде
   const nextP = format(addMonths(new Date(), 1), 'yyyy-MM-01')
   const fromWord = (p: string) => format(parseISO(p), 'MMMM', { locale: ru })   // «ноября»
   const monthWord = (p: string) => format(parseISO(p), 'LLLL', { locale: ru })  // «октябрь»
-  async function removeCar() {
-    if (!await ask(`Убрать ${car.make} ${car.model} с ${fromWord(nextP)}?`, {
-      detail: `За ${monthWord(curP)} машина посчитается как обычно — можно внести Gross, зарплата за неё сохранится. С ${fromWord(nextP)} её не будет в «Авто», в зарплате и в «Доходах». Вернуть можно в этой же карточке.`,
+  async function removeCar(from: string) {
+    const now = from === curP
+    if (!await ask(`Убрать ${car.make} ${car.model} с ${fromWord(from)}?`, {
+      detail: now
+        ? `Машина уже не работает: за ${monthWord(curP)} её не будет в «Авто», в зарплате и в «Доходах» (если Gross за ${monthWord(curP)} уже внесён — выберите «со следующего месяца»). Прошлые месяцы сохранятся, вернуть можно в этой же карточке.`
+        : `За ${monthWord(curP)} машина посчитается как обычно — можно внести Gross, зарплата за неё сохранится. С ${fromWord(from)} её не будет в «Авто», в зарплате и в «Доходах». Вернуть можно в этой же карточке.`,
       ok: 'Убрать',
     })) return
-    if (await removeCarFrom({ carId: car.id, from: nextP, canFleet: true, canIncome: canAny(access, ['/income']) })) {
-      notify(`Убрана с ${fromWord(nextP)}`, 'success'); onChanged?.()
+    if (await removeCarFrom({ carId: car.id, from, canFleet: true, canIncome: canAny(access, ['/income']) })) {
+      notify(`Убрана с ${fromWord(from)}`, 'success'); onChanged?.()
     }
   }
   async function restore() {
@@ -227,9 +230,13 @@ export default function CarCard({ car, onClose, onChanged }: { car: Car; onClose
                   <button onClick={restore} className="inline-flex items-center gap-1.5 font-semibold"><RotateCcw size={14} /> Вернуть</button>
                 </div>
               ) : (
-                <button onClick={removeCar} className="w-full inline-flex items-center justify-center gap-2 h-11 rounded-2xl border border-gray-200 text-sm font-medium text-gray-600 hover:text-red-600 hover:border-red-200">
-                  <Archive size={16} /> Продана или разбита — убрать с {fromWord(nextP)}
-                </button>
+                <div className="rounded-2xl border border-gray-200 p-3">
+                  <p className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2"><Archive size={16} className="text-gray-400" /> Продана или разбита — убрать</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => removeCar(curP)} className="h-10 rounded-xl border border-gray-200 text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-200">с {fromWord(curP)}<span className="block text-[10px] text-gray-400">уже не работает</span></button>
+                    <button onClick={() => removeCar(nextP)} className="h-10 rounded-xl border border-gray-200 text-xs font-medium text-gray-600 hover:text-red-600 hover:border-red-200">с {fromWord(nextP)}<span className="block text-[10px] text-gray-400">в {monthWord(curP)} ещё работала</span></button>
+                  </div>
+                </div>
               ))}
             </>
           )}

@@ -113,7 +113,7 @@ function CarDrawer({
   lifetime: { net: number; gross: number; months: number }
   fleetOptions: Car[]
   onSave: (e: Entry) => Promise<boolean>; onClose: () => void
-  onLink: (carId: string) => void; onSold: () => void; onUnsold: () => void
+  onLink: (carId: string) => void; onSold: (from: string) => void; onUnsold: () => void
 }) {
   const base: Entry = entry || { revenue_car_id: rcar.id, period, gross: 0, repair: 0, claim_items: [], other_items: [] }
   const [gross, setGross] = useState(base.gross ? String(base.gross) : '')
@@ -306,7 +306,13 @@ function CarDrawer({
                 <button onClick={onUnsold} className="inline-flex items-center gap-1 font-semibold"><RotateCcw size={13} /> Вернуть</button>
               </div>
             ) : (
-              <button onClick={onSold} className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-gray-200 px-3 h-10 text-sm text-gray-600 hover:text-red-600 hover:border-red-200"><Archive size={15} /> Продана или разбита — убрать с {format(addMonths(parseISO(period), 1), 'MMMM', { locale: ru })}</button>
+              <div className="rounded-xl border border-gray-200 p-2.5">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-gray-600 mb-2"><Archive size={14} className="text-gray-400" /> Продана или разбита — убрать</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => onSold(period)} className="h-10 rounded-lg border border-gray-200 text-xs text-gray-600 hover:text-red-600 hover:border-red-200">с {format(parseISO(period), 'MMMM', { locale: ru })}<span className="block text-[10px] text-gray-400">уже не работала</span></button>
+                  <button onClick={() => onSold(pKey(addMonths(parseISO(period), 1)))} className="h-10 rounded-lg border border-gray-200 text-xs text-gray-600 hover:text-red-600 hover:border-red-200">с {format(addMonths(parseISO(period), 1), 'MMMM', { locale: ru })}<span className="block text-[10px] text-gray-400">в этом месяце работала</span></button>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -851,12 +857,14 @@ export default function IncomePage() {
     await load()
     if (data?.id) setDrawer(data.id)
   }
-  async function markSold(c: RCar) {
-    const next = pKey(addMonths(month, 1))
+  // from — выбранный месяц (этот, если машина уже не работала, или следующий)
+  async function markSold(c: RCar, from: string) {
+    const next = from
     const fleetCar = c.car_id ? fleet.find(f => f.id === c.car_id) : null
     const fromW = format(parseISO(next), 'MMMM', { locale: ru })
+    const now = next === pKey(month)
     if (!await ask(`${c.name}: убрать с ${fromW}?`, {
-      detail: `За ${format(month, 'LLLL', { locale: ru })} машина посчитается как обычно — можно внести Gross.${fleetCar ? ` С ${fromW} её не будет в «Доходах», в «Авто» и в зарплате работника.` : ' Машина не привязана к парку — уберётся только из «Доходов».'} Данные прошлых месяцев сохранятся, вернуть можно в этой же панели.`,
+      detail: `${now ? `За ${format(month, 'LLLL', { locale: ru })} машина уже не посчитается${entries.some(e => e.revenue_car_id === c.id && e.period === next && n(e.gross) > 0) ? ' — внесённый за этот месяц Gross уйдёт из итогов, лучше выберите «со следующего»' : ''}.` : `За ${format(month, 'LLLL', { locale: ru })} машина посчитается как обычно — можно внести Gross.`}${fleetCar ? ` С ${fromW} её не будет в «Доходах», в «Авто» и в зарплате работника.` : ' Машина не привязана к парку — уберётся только из «Доходов».'} Данные прошлых месяцев сохранятся, вернуть можно в этой же панели.`,
       ok: 'Убрать',
     })) return
     const ok = await removeCarFrom({ carId: c.car_id, revenueCarId: c.id, from: next, canFleet: canAny(access, ['/cars']), canIncome: true })
@@ -1541,7 +1549,7 @@ export default function IncomePage() {
           entry={entryOf(drawerCar.id, period)} history={drawerHistory} lifetime={drawerLifetime}
           fleetOptions={[...(drawerCar.car_id ? fleet.filter(f => f.id === drawerCar.car_id) : []), ...freeFleet]}
           onSave={saveEntry} onClose={() => setDrawer(null)}
-          onLink={id => linkCar(drawerCar, id)} onSold={() => markSold(drawerCar)} onUnsold={() => unSold(drawerCar)} />
+          onLink={id => linkCar(drawerCar, id)} onSold={from => markSold(drawerCar, from)} onUnsold={() => unSold(drawerCar)} />
       )}
 
       {/* Новая машина */}
