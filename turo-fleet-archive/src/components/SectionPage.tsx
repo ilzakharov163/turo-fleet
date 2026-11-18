@@ -1,7 +1,7 @@
 'use client'
 
 import { Suspense, type ComponentType } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { canAny, useAccess } from '@/lib/access'
 
 // Раздел из нескольких вкладок (?tab=key). Вкладка видна, если у пользователя есть хоть одна из её галочек.
@@ -14,7 +14,6 @@ export interface SectionTab {
 }
 
 function Section({ base, tabs }: { base: string; tabs: SectionTab[] }) {
-  const router = useRouter()
   const params = useSearchParams()
   const access = useAccess()
 
@@ -32,8 +31,10 @@ function Section({ base, tabs }: { base: string; tabs: SectionTab[] }) {
           {visible.map(t => (
             <button
               key={t.key}
-              // У каждой вкладки свой адрес, и у первой тоже: переход на голый base с той же страницы Next не выполнял
-              onClick={() => router.replace(`${base}?tab=${t.key}`, { scroll: false })}
+              // Вкладка меняет только ?tab= в адресе — без перехода роутера Next: после загрузки страницы сразу на вкладке
+              // (обновление, прямая ссылка) router.replace зависал и вкладки не переключались. replaceState Next
+              // синхронизирует с useSearchParams сам (docs: Linking and Navigating → window.history).
+              onClick={() => window.history.replaceState(null, '', `${base}?tab=${t.key}`)}
               className={`flex-1 sm:flex-none px-3 sm:px-4 h-9 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                 active.key === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
               }`}
