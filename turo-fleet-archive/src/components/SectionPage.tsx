@@ -32,7 +32,8 @@ function Section({ base, tabs }: { base: string; tabs: SectionTab[] }) {
           {visible.map(t => (
             <button
               key={t.key}
-              onClick={() => router.replace(t.key === tabs[0].key ? base : `${base}?tab=${t.key}`, { scroll: false })}
+              // У каждой вкладки свой адрес, и у первой тоже: переход на голый base с той же страницы Next не выполнял
+              onClick={() => router.replace(`${base}?tab=${t.key}`, { scroll: false })}
               className={`flex-1 sm:flex-none px-3 sm:px-4 h-9 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                 active.key === t.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
               }`}
